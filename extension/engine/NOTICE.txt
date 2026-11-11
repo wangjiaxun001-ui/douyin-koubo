@@ -1,0 +1,7 @@
+This directory bundles the browser recognition files shipped by the sherpa-onnx project:
+https://github.com/k2-fsa/sherpa-onnx/releases/tag/v1.12.20
+Asset: sherpa-onnx-wasm-simd-1.12.20-vad-asr-zh_en-paraformer_small.tar.bz2
+Distribution SHA-256: be25b1ef4dcb7a037cf6954ad878737ce7842fa0b512c991ebd39b95d2e6d548
+sherpa-onnx: https://github.com/k2-fsa/sherpa-onnx (Apache-2.0; see LICENSE-sherpa.txt).
+The upstream bundle includes the Paraformer small recognizer, Silero VAD, ONNX Runtime and generated Emscripten bindings.
+All inference runs on-device. worker.js is the extension's own adapter.

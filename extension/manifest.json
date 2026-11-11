@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "拾句 · 抖音口播提词器",
+  "version": "1.0.0",
+  "minimum_chrome_version": "116",
+  "description": "提取当前抖音视频字幕，或从头离线转写标签页声音。一键复制带时间的口播和脚本结构。",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "tabCapture",
+    "offscreen",
+    "storage",
+    "clipboardWrite"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "拾句 · 提取当前视频",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self'"
+  },
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}
