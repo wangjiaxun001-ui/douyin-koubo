@@ -1,8 +1,9 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>拾句 · 抖音口播提词器</title><link rel="stylesheet" href="ui.css"></head><body>
 <header><i>拾</i><div><strong>拾句</strong><small> 抖音口播提词器</small></div><b>本地处理</b></header>
-<main><h1>把口播变成文字。</h1><p id="lead">打开一条抖音作品，优先读取字幕；没有可用字幕，就从头听写。</p>
-<button id="start" class="primary">提取当前视频 <span>→</span></button>
+<main><nav class="flow" aria-label="拾句工作流程"><a href="#extract" aria-current="step">1 提取口播</a><button id="openCompare">2 对比挑段</button><button id="openFinal">3 查看成稿</button></nav><h1 id="extract">把口播变成文字。</h1><p id="lead">打开一条抖音作品，优先读取字幕；没有可用字幕，就直接读取音轨，在本机快速转写。</p>
+<button id="start" class="primary">快速提取当前视频 <span>→</span></button>
+<button id="syncMetrics">只更新作品数据</button><small class="sync-hint">已有文案可单独更新粉丝、点赞和评论。</small>
 <details id="options"><summary>提取选项</summary><label><input id="force" type="checkbox"> 忽略网页字幕，按原声重新听写</label></details>
-<section id="job" hidden><div class="meta"><strong id="source"></strong><span id="progress"></span></div><progress id="bar" value="0" max="1"></progress><p id="title"></p><p id="status" role="status"></p><button id="stop" hidden>停止并保留已有文字</button></section>
-<section id="result" hidden><div class="switch"><button id="raw" aria-pressed="true">逐字口播</button><button id="structure" aria-pressed="false">脚本拆解</button></div><pre id="preview"></pre><div class="copies"><button id="copyRaw">复制逐字稿</button><button id="copyScript">复制脚本拆解</button></div></section>
-<div id="toast" role="status"></div></main><footer>不录屏 · 不保存影音 · 不上传声音</footer><script src="format.js"></script><script src="popup.js"></script></body></html>
+<section id="job" hidden><div class="meta"><strong id="source"></strong><span id="progress"></span></div><progress id="bar" value="0" max="1"></progress><p id="title"></p><p id="status" role="status"></p><button id="listen" hidden>改用从头播放听写</button><button id="stop" hidden>停止并保留已有文字</button></section>
+<section id="result" hidden><div class="switch"><button id="raw" aria-pressed="true">逐字口播</button><button id="structure" aria-pressed="false">脚本拆解</button></div><pre id="preview"></pre><div class="copies"><button id="copyRaw">复制逐字稿</button><button id="copyScript">复制脚本拆解</button></div><button id="compareJob">把整篇加入文案对比</button><div id="clipTools"><label for="clipRow">选一段口播</label><select id="clipRow"></select><button id="sendClip">加入已有选题卡 →</button><small id="clipHint"></small></div></section>
+<div id="toast" role="status"></div></main><footer>不录屏 · 不保存影音 · 不上传声音</footer><script src="format.js"></script><script src="navigation.js"></script><script src="popup.js"></script></body></html>

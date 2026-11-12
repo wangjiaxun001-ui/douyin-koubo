@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>文案对比与成稿 · 拾句</title>
+<style>
+:root{color-scheme:light;--ink:#22392e;--paper:#f6f5ef;--line:#cbd4c8;--green:#21563d;--pale:#e9eee5}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.55 "Inter","PingFang SC",sans-serif}
+main{max-width:1560px;margin:auto;padding:30px clamp(14px,4vw,64px) 60px}header{border-top:4px solid var(--green);padding:20px 0 12px}
+h1,h2,p{margin:0}h1{font:600 clamp(32px,4vw,50px)/1.2 "Songti SC",serif}h2,summary{font-size:21px;font-weight:650}
+.bar,.tools,.rowhead{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.bar{justify-content:space-between;margin-bottom:14px}
+section,details{margin:16px 0;background:#fffef9;border:1px solid var(--line);border-radius:10px;padding:clamp(14px,2vw,24px)}
+summary,button,label.select{cursor:pointer}summary{width:fit-content}input,button,select,textarea{font:inherit;color:inherit}
+button,select,input[type=text]{background:#fffef9;border:1px solid #aab8a8;border-radius:6px;padding:6px 12px;max-width:100%}
+button:hover{background:var(--pale)}button:disabled{opacity:.5;cursor:default}button.primary,button[aria-pressed=true]{background:var(--green);color:white}
+input:focus-visible,button:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #97ad8c;outline-offset:2px}
+label.select{font-size:13px}input[type=checkbox]{accent-color:var(--green)}#topic{width:min(400px,100%)}#projects{max-width:210px}
+.hint,small{font-size:13px;color:#546553}.hint{margin:6px 0 12px}.inputs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:12px 0}
+.inputs label{display:block;font-weight:600}.inputs textarea{height:122px;margin-top:5px}
+textarea{display:block;width:100%;padding:9px 11px;font:inherit;line-height:1.65;background:#fffef9;border-radius:5px;border:1px solid var(--line);resize:vertical}
+.filters button{font-size:14px}.sheet{max-height:66vh;overflow:auto;border:1px solid var(--line);border-radius:6px}table{border-spacing:0;table-layout:fixed;width:100%;min-width:1080px}
+col:first-child{width:88px}td,th{padding:10px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+thead th{position:sticky;top:0;z-index:2;background:#e5ebe1}tbody th{background:#f2f4ec;position:sticky;left:0;z-index:1;font-size:14px}
+thead th:first-child{left:0;z-index:3}td:has(input:checked){background:#eaf2e4}.editor{min-height:86px;field-sizing:content;margin-top:6px}
+ol{padding:0;list-style:none;counter-reset:paragraphs}li{counter-increment:paragraphs;padding:12px 0;border-top:1px solid var(--line)}
+li strong::before{content:counter(paragraphs) ". "}li strong{margin-right:auto}li button{font-size:13px;padding:4px 9px}
+a{color:var(--green)}#save-state{display:block;margin:8px 0}footer{display:flex;gap:8px;flex-wrap:wrap;align-items:center}#empty{margin:10px 0}
+@media(max-width:760px){main{padding:14px 10px 40px}.inputs{grid-template-columns:1fr 1fr}.sheet{max-height:60vh}col:first-child{width:62px}}
+@media(max-width:460px){.inputs{grid-template-columns:1fr}.inputs textarea{height:80px}}
+.inputs{grid-template-columns:repeat(auto-fit,minmax(min(215px,100%),1fr))}
+.source-name{width:100%;margin-bottom:6px}#final-text{margin:8px 0 4px}.final-heading{margin-top:20px}footer{margin-top:12px}#final-state{display:block}.sheet th a{font-size:12px;display:block;font-weight:400}#copy-final{margin-left:4px}
+.workflow{position:sticky;top:0;z-index:5;display:flex;gap:5px;padding:6px;background:#f6f5eff5;border-block:1px solid var(--line)}.workflow button{flex:1;font-size:14px;padding:8px 3px}.workflow [aria-current=step]{background:var(--green);color:white}.stage{scroll-margin-top:62px}
+.metric-inputs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin:6px 0}.metric-inputs label{font-size:12px;color:#45584c}.metric-inputs input{width:100%;padding:5px;font-weight:400}.metric-strip{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;font-size:12px;font-weight:400}.metric-strip span{background:#f8faf6;padding:2px 5px;border-radius:4px}.check-note{display:block;font-size:11px;font-weight:400}.edit-metrics{padding:2px 5px;font-size:12px;margin-top:5px}.stage h2{margin-top:0}#sync-state:empty{display:none}
+@media(max-width:520px){.workflow button{font-size:12px}.inputs{grid-template-columns:1fr}}
+#delete-project{color:#893c32}#delete-project:hover{background:#f9eae6}
+</style></head><body><main>
+<header><div class="bar"><h1>文案对比与成稿</h1><div class="tools"><label>切换选题 <select id="projects"></select></label><button id="new-project">新建选题</button><button type="button" id="delete-project">删除选题</button></div></div>
+<label>当前选题 <input id="topic" type="text" placeholder="输入这期要讲的选题"></label><small id="save-state" role="status"></small></header>
+<nav class="workflow" aria-label="文案制作步骤"><button id="return-extract">← 提取口播</button><button data-step="intake">1 录入文案</button><button data-step="compare">2 对比挑段</button><button data-step="draft">3 排列段落</button><button data-step="final">4 最终成稿</button></nav>
+<p id="sync-state" class="hint" role="status"></p>
+<details class="stage" id="intake" open><summary>录入文案与作品数据</summary>
+<p class="hint">粉丝数取自原作者，点赞和评论取自原视频。打开已保存的文案会显示上次核对结果，不重新访问抖音。已有文案可打开原视频，在拾句点「只更新作品数据」。有几篇就贴几篇。可以用单独一行的「开头」「中间」「结尾」指定分段，也可以直接贴全文，由页面先按段落或句子拆开。</p>
+<div class="inputs" id="inputs"></div><button class="primary" id="import">分段并对比</button> <button type="button" id="add-source">＋ 添加一篇文案</button></details>
+<section id="compare" class="stage"><div class="bar"><h2>对比数据，挑选段落</h2></div>
+<div class="bar"><div class="tools filters" id="filters"></div><button id="add-middle">＋ 增加中间段</button></div>
+<p class="hint">点击文字即可修改。可跨版本勾选，已选段落默认按表格顺序排列。</p>
+<div class="sheet" tabindex="0" aria-label="可横向滑动的文案表"><table><colgroup id="cols"></colgroup><thead><tr id="head"><th scope="col">段落</th></tr></thead><tbody id="matrix"></tbody></table></div></section>
+<section id="draft" class="stage"><div class="bar"><h2>排列已选段落</h2><div class="tools"><button id="table-order" hidden>按对比表顺序排列</button><button id="undo-order" hidden>恢复整理前的顺序</button></div></div><p class="hint" id="order-hint"></p><p class="hint" id="empty">勾选的段落会依次出现在这里。</p><ol id="queue"></ol><button id="generate" class="primary">生成最终文案</button></section><section class="stage" id="final"><h2 class="final-heading"><label for="final-text">最终文案</label></h2><textarea rows="9" id="final-text" placeholder="选好段落后点「生成最终文案」，也可以直接在这里写。"></textarea><small id="final-state" role="status"></small><footer><label>文件名 <input type="text" id="filename" placeholder="选题名-逐字稿"></label><button class="primary" id="download">导出最终文案（TXT）</button><button id="copy-final">复制最终文案</button></footer></section>
+</main><script src="navigation.js"></script><script src="metrics.js"></script><script src="compare.js"></script></body></html>

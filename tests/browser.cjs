@@ -19,13 +19,22 @@ async function rpc(url){const sock=new WebSocket(url);await new Promise((ok,no)=
  }
  const state=()=>sw.evaluate(async()=> (await chrome.storage.session.get('job')).job);
  async function until(pred,limit=30000){let j;for(let t=0;t<limit;t+=250){j=await state();if(j&&pred(j))return j;await delay(250)}throw Error('timeout: '+JSON.stringify(j))}
- const finished=j=>['error','partial','empty','done'].includes(j.phase);
+ const finished=j=>['error','partial','empty','done','unavailable'].includes(j.phase);
  if(process.env.LIVE){
- await page.goto('https://www.douyin.com/video/7686819974069128483',{waitUntil:'domcontentloaded',timeout:35000});await page.waitForSelector('video',{timeout:20000});await page.waitForTimeout(2000);
- const ev=await popup();await ev('document.querySelector("#start").click()');const j=await until(finished,150000);console.log('LIVE',JSON.stringify({phase:j.phase,reason:j.message,source:j.source,duration:j.duration,time:j.time,rows:j.rows.length,first:j.rows[0]?.t.slice(0,12)}));assert.equal(j.phase,'done');assert(j.rows.length);return;
+ const url=process.env.TEST_VIDEO_URL||'https://www.douyin.com/video/7686819974069128483';
+ await page.goto(url,{waitUntil:'domcontentloaded',timeout:35000});
+ await page.waitForFunction(()=>[...document.querySelectorAll('video')].some(v=>v.duration>10),null,{timeout:30000});
+ await page.waitForTimeout(1200);
+ const position=()=>page.evaluate(()=>{const v=[...document.querySelectorAll('video')].find(v=>v.duration>10);return {time:v.currentTime,paused:v.paused}});
+ await page.evaluate(()=>[...document.querySelectorAll('video')].forEach(v=>v.pause()));
+ const before=await position();const ev=await popup();
+ await ev('document.querySelector("#force").checked=true;document.querySelector("#start").click()');
+ const j=await until(finished,240000);const after=await position();
+ console.log('LIVE',JSON.stringify({phase:j.phase,reason:j.message,title:j.title,source:j.source,duration:j.duration,time:j.time,firstMs:j.firstAt-j.startedAt,totalMs:j.endedAt-j.startedAt,segments:j.rows.length,first:j.rows[0],last:j.rows.at(-1),before,after}));
+ assert.equal(j.phase,'done');assert.equal(j.source,'快速音轨转写');assert(j.rows.length);assert(after.paused && Math.abs(after.time-before.time)<0.2);return;
  }
  const wav=fs.readFileSync(process.env.TEST_VOICE);let caps=true;
- await ctx.route('https://www.douyin.com/**',async route=>{const u=new URL(route.request().url());if(u.pathname==='/speech.wav')return route.fulfill({contentType:'audio/wav',body:wav});
+ await ctx.route('https://www.douyin.com/**',async route=>{const u=new URL(route.request().url());if(u.pathname==='/speech.wav'&&caps==='partial'&&route.request().resourceType()==='fetch')return route.fulfill({status:404,body:''});if(u.pathname==='/speech.wav')return route.fulfill({contentType:'audio/wav',body:wav});
  if(u.pathname==='/captions.vtt'&&caps==='partial')return route.fulfill({contentType:'text/vtt',body:'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n只有第一句\n'});
  if(u.pathname==='/captions.vtt')return route.fulfill({contentType:'text/vtt',body:'WEBVTT\n\n00:00:00.000 --> 00:00:03.000\n嗯，嗯，今天测试。\n\n00:00:03.000 --> 00:00:07.750\n最后记得检查文字。\n'});
  return route.fulfill({contentType:'text/html;charset=utf-8',body:'<!doctype html><title>分享描述不是逐字稿</title><video preload="auto" controls style="width:500px;height:320px" src="/speech.wav">'+(caps?'<track kind="captions" srclang="zh" src="/captions.vtt">':'')+'</video>'})});
@@ -35,7 +44,7 @@ async function rpc(url){const sock=new WebSocket(url);await new Promise((ok,no)=
  await ev('document.querySelector("#'+button+'").click()');await delay(200);
  const clip=await ev('navigator.clipboard.readText()');assert(clip.includes(needle),'clipboard mismatch');assert(!clip.includes('分享描述'))}
  console.log('PASS actual popup, subtitle extraction and both clipboard reads');
- caps=false;await sample(456);ev=await popup();await ev('document.querySelector("#start").click()');j=await until(x=>x.token!==j.token&&finished(x),60000);console.log('ASR',JSON.stringify(j));assert.equal(j.phase,'done',j.message);assert(j.rows.map(r=>r.t).join('').includes('测试'));assert(j.rows.map(r=>r.t).join('').includes('文字'));
- assert.equal(j.rows.map(r=>r.t).join(''),'今天我们来做一个测试打开手机把视频链接复制下来最后记得检查文字'); const before=j.token;caps='partial';await sample(789);ev=await popup();await ev('document.querySelector("#start").click()');await until(x=>x.token!==before&&x.phase==='listening');await delay(1300);await page.evaluate(()=>document.querySelector('video').currentTime=5);j=await until(x=>x.token!==before&&finished(x));assert.equal(j.phase,'partial',j.message);console.log('PASS incomplete captions fall back to ASR; seek yields partial');
+ caps=false;await sample(456);ev=await popup();await ev('document.querySelector("#start").click()');j=await until(x=>x.token!==j.token&&finished(x),60000);console.log('ASR',JSON.stringify(j));assert.equal(j.phase,'done',j.message);assert.equal(j.source,'快速音轨转写');assert(j.rows.map(r=>r.t).join('').includes('测试'));assert(j.rows.map(r=>r.t).join('').includes('文字'));
+ assert.equal(j.rows.map(r=>r.t).join(''),'今天我们来做一个测试打开手机把视频链接复制下来最后记得检查文字'); const before=j.token;caps='partial';await sample(789);ev=await popup();await ev('document.querySelector("#start").click()');await until(x=>x.token!==before&&x.phase==='unavailable');await ev('document.querySelector("#listen").click()');await until(x=>x.phase==='listening');await delay(1300);await page.evaluate(()=>document.querySelector('video').currentTime=5);j=await until(x=>x.token!==before&&finished(x));assert.equal(j.phase,'partial',j.message);console.log('PASS incomplete captions fall back to ASR; seek yields partial');
  }finally{await b?.close().catch(()=>{});proc.kill();await delay(500);fs.rmSync(profile,{recursive:true,force:true})}
 })().catch(e=>{console.error(e);process.exitCode=1});

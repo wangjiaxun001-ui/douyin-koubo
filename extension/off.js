@@ -1,4 +1,4 @@
-let job=null;
+let job=null, fast=null;
 const emit=(j,msg)=>chrome.runtime.sendMessage({to:'bg',op:'audio',token:j.token,...msg}).catch(()=>{});
 function release(j){
   if(job===j)job=null;
@@ -44,6 +44,13 @@ async function boot(m){
 chrome.runtime.onMessage.addListener((m,_,reply)=>{
  if(m.to!=='off')return;
  (async()=>{
+   if(m.op==='fastBoot'){
+     fast?.close(); fast=createFastWorker(m.token); await fast.ready; return;
+   }
+   if(fast?.token===m.token){
+     if(m.op==='fastChunk')return {rows:await fast.process(m.pcm)};
+     if(m.op==='abort'){fast.close();fast=null;return}
+   }
    if(m.op==='boot')return boot(m);
    const j=job;if(!j||m.token!==j.token)return;
    if(m.op==='arm')j.accept=true;
@@ -53,5 +60,5 @@ chrome.runtime.onMessage.addListener((m,_,reply)=>{
      await new Promise(r=>setTimeout(r,280));
      j.tap.port.postMessage('end'); j.timeout=setTimeout(()=>fail(j,'识别尾段超时'),30000);
    }
- })().then(()=>reply({ok:true}),e=>reply({error:e.message}));return true
+ })().then(result=>reply(result||{ok:true}),e=>reply({error:e.message}));return true
 });

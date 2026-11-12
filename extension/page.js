@@ -4,7 +4,7 @@ if(globalThis.__shiju)return;
 const delay=n=>new Promise(r=>setTimeout(r,n));
 const key=()=>new URL(location.href).searchParams.get('modal_id')||location.pathname.match(/(?:video|note)\/(\d+)/)?.[1]||'';
 function visible(v){const r=v.getBoundingClientRect();return Math.max(0,Math.min(r.right,innerWidth)-Math.max(r.left,0))*Math.max(0,Math.min(r.bottom,innerHeight)-Math.max(r.top,0))}
-function pick(){return [...document.querySelectorAll('video')].filter(v=>visible(v)>100&&v.readyState>=1).sort((a,b)=>Number(!b.paused)-Number(!a.paused)||visible(b)-visible(a))[0]}
+function pick(){return [...document.querySelectorAll('video')].filter(v=>visible(v)>100&&v.readyState>=1).sort((a,b)=>Number(!!b.closest('[data-e2e="player-container"]'))-Number(!!a.closest('[data-e2e="player-container"]'))||visible(b)-visible(a)||Number(!b.paused)-Number(!a.paused))[0]}
 function complete(rows,d){
  rows=rows.filter(r=>r.t&&Number.isFinite(r.s)&&Number.isFinite(r.e)&&r.s>=0&&r.e>r.s&&r.s<d).sort((a,b)=>a.s-b.s);
  if(!rows.length||rows[0].s>Math.max(2,d*.08)||rows.at(-1).e<d-Math.min(4,d*.12)||rows.at(-1).e>d+3)return [];
@@ -49,7 +49,7 @@ async function subtitles(v){
 }
 let j;
 function cleanup(){
- if(!j)return;const x=j;j=null;clearInterval(x.timer);x.events?.abort();
+ if(!j)return;const x=j;j=null;x.controller?.abort();clearInterval(x.timer);x.events?.abort();
  if(x.changed){x.v.loop=x.loop;x.v.muted=x.muted;x.v.volume=x.volume;x.v.playbackRate=x.rate}
 }
 function send(op,extra={}){if(j)chrome.runtime.sendMessage({to:'bg',op,token:j.token,...extra}).catch(()=>{})}
@@ -59,13 +59,23 @@ globalThis.__shiju=async(op,token,force)=>{
   if(!v)throw Error('没有找到可播放的视频。请在抖音网页版打开单条作品，确认能播放后再试。');
   if(!Number.isFinite(v.duration)||v.duration<=0)throw Error('请等待视频加载完成；直播无法从头转写。');
   j={v,token,src:v.currentSrc,id:key(),duration:v.duration};
+  const metricId=j.id;
+  if(metricId)ShijuMetrics.read(metricId).then(values=>chrome.runtime.sendMessage({to:'bg',op:'workMetrics',workId:metricId,token,values})).catch(()=>{});
   const rows=force?[]:await subtitles(v);
-  return {duration:v.duration,title:document.title,rows};
+  if(key()!==j.id||v.currentSrc!==j.src)throw Error('作品已切换，请重新提取。');
+  return {duration:v.duration,title:document.title,rows,workId:j.id};
  }
  if(!j||token!==j.token)throw Error('视频页面已切换，请重新开始');
  const x=j,v=x.v;
  if(op==='release'){cleanup();return}
  if(!v.isConnected||v.currentSrc!==x.src||key()!==x.id)throw Error('作品已切换，请重新开始');
+ if(op==='readTrack'){
+  x.controller=new AbortController();
+  x.audio=await globalThis.__shijuReadTrack(v,x.id,x.controller.signal);
+  if(j!==x || key()!==x.id || v.currentSrc!==x.src)throw Error('作品已切换');
+  return x.audio.length;
+ }
+ if(op==='samples')return globalThis.__shijuSamples(x.audio,force);
  if(op==='rewind'){
   Object.assign(x,{changed:true,loop:v.loop,muted:v.muted,volume:v.volume,rate:v.playbackRate});
   v.pause();v.loop=false;v.playbackRate=1;v.currentTime=0;
