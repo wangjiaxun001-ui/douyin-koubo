@@ -1,6 +1,6 @@
 
 'use strict';
-const defaultNames = ['我的原稿', 'DeepSeek', 'Gemini', '豆包'];
+const defaultNames = ['我的原稿', '博主参考稿'];
 const groups = ['开头', '中间', '结尾'];
 const storage = 'shiju-script-editor.v1';
 const $ = id => document.getElementById(id);
@@ -117,6 +117,7 @@ function useTableOrder(p){
  p.beforeSort=before.some((key,i)=>key!==p.order[i])?before:null;
 }
 function activate(p){
+ resetRewrite();
  if(!p.orderMode)useTableOrder(p);
   project=p; library.active=p.id; filter='全部';highlight('intake');
   document.title=(p.title || '未命名选题')+' · 文案对比与成稿';
@@ -196,7 +197,49 @@ function renderQueue(){
   });
   $('empty').hidden=!!project.order.length;updateFinalControls();
 }
+function removeSource(col) {
+  if (!confirm('删除「'+project.names[col]+'」及其已选段落？')) return;
+
+  const selected = $('ai-source').selectedIndex;
+  if (selected >= col && rewriteRequest) {
+    rewriteRequest.abort();
+    rewriteRequest = null;
+    $('ai-status').textContent = '文稿列表已变更，本次改稿已停止。';
+  }
+  for (const field of ['names','raw','imported','sources','metrics']) {
+    project[field]?.splice(col,1);
+  }
+  // Paragraph keys start with the source column index.
+  function remainingKey(key) {
+    const slash = key.indexOf('/');
+    const index = Number(key.slice(0,slash));
+    if (index === col) return null;
+    return index > col ? (index-1)+key.slice(slash) : key;
+  }
+  const cells = {};
+  for (const [key,text] of Object.entries(project.cells)) {
+    const next = remainingKey(key);
+    if (next !== null) cells[next] = text;
+  }
+  project.cells = cells;
+  project.order = project.order.map(remainingKey).filter(Boolean);
+  if (project.beforeSort) {
+    project.beforeSort = project.beforeSort.map(remainingKey).filter(Boolean);
+    if (project.beforeSort.every((key,i)=>key === project.order[i])) project.beforeSort = null;
+  }
+  if (!project.order.length) project.orderMode = 'table';
+  renderSources();
+  $('ai-source').selectedIndex = selected === col ? 0 : selected - Number(selected > col);
+  refreshRewriteControls();
+  renderTable();
+  renderQueue();
+  refreshImport();
+  save();
+  const nextField = $('inputs').children[Math.min(col,project.names.length-1)]?.querySelector('.source-name');
+  (nextField || $('add-source')).focus();
+}
 function renderSources(){
+  refreshRewriteSources();
   $('inputs').replaceChildren(); $('head').replaceChildren(node('th','段落'));
   $('cols').replaceChildren(...Array.from({length:project.names.length+1},()=>node('col')));
   $('matrix').closest('table').style.minWidth=(78+225*project.names.length)+'px';
@@ -207,8 +250,8 @@ function renderSources(){
     const th=node('th'),caption=node('span',name);th.scope='col';th.append(caption);
     const url=project.sources[col];
     if(url && /^https:\/\/www\.douyin\.com\/video\/\d+$/.test(url)){const a=node('a','原视频 ↗');a.href=url;a.target='_blank';a.rel='noopener noreferrer';th.append(a)}
-    nameInput.onchange=()=>{project.names[col]=nameInput.value.trim()||'文案 '+(col+1);nameInput.value=project.names[col];caption.textContent=nameInput.value;area.setAttribute('aria-label',nameInput.value+' 全文');renderTable();renderQueue();save()};
-    area.oninput=()=>{project.raw[col]=area.value;refreshImport();save()};
+    nameInput.onchange=()=>{project.names[col]=nameInput.value.trim()||'文案 '+(col+1);nameInput.value=project.names[col];caption.textContent=nameInput.value;area.setAttribute('aria-label',nameInput.value+' 全文');refreshRewriteSources();renderTable();renderQueue();save()};
+    area.oninput=()=>{project.raw[col]=area.value;refreshImport();refreshRewriteControls();save()};
     const m=stats(project,col), fields=node('div'), strip=node('div');fields.className='metric-inputs';strip.className='metric-strip';
     for(const k of ShijuMetrics.keys){
      const tag=node('label',metricLabels[k]),input=node('input'),badge=node('span');
@@ -226,7 +269,9 @@ function renderSources(){
      const note=node('small',ShijuMetrics.keys.some(k=>!m.values[k])?'部分数据未核实':'');note.className='check-note';th.append(strip,note);
     }
     const edit=button('编辑数据',()=>{go('intake');fields.querySelector('input').focus()});edit.className='edit-metrics';if(!url)th.append(strip);th.append(edit);
-    label.append(nameInput,fields,area);$('inputs').append(label);$('head').append(th)
+    const heading=node('div');heading.className='source-heading';
+    const remove=button('删除',()=>removeSource(col));remove.title='删除这篇文稿';
+    heading.append(nameInput,remove);label.append(heading,fields,area);$('inputs').append(label);$('head').append(th)
   });
 }
 function updateFinalControls(){
@@ -241,7 +286,7 @@ $('generate').onclick=()=>{
 };
 $('final-text').oninput=e=>{project.finalText=e.target.value;updateFinalControls();save()};
 $('copy-final').onclick=async()=>{try{await navigator.clipboard.writeText(project.finalText);$('final-state').textContent='最终文案已复制'}catch{$('final-text').select();$('final-state').textContent='已选中全文，请按复制快捷键'}};
-$('add-source').onclick=()=>{appendSource('文案 '+(project.names.length+1),'','');renderSources();renderTable();save();$('inputs').lastElementChild.querySelector('input').focus()};
+$('add-source').onclick=()=>{appendSource('博主参考稿 '+(project.names.length+1),'','');renderSources();renderTable();save();$('inputs').lastElementChild.querySelector('input').focus()};
 function appendSource(name,text,url){
  const col=project.names.length;project.names.push(name);project.raw.push(text);project.imported.push('');project.sources[col]=url;
  if(text)placeDraft(col,text);
@@ -344,6 +389,7 @@ async function loadEditor(){
  if(params.size)history.replaceState(null,'',location.pathname);
 }
 window.addEventListener('hashchange',()=>{if(/^#(?:job|step|metrics)=/.test(location.hash))loadEditor().catch(err=>{$('save-state').textContent=err.message})});
+initRewrite();
 loadEditor().catch(err=>{activate(project);$('save-state').textContent='打开文案失败：'+err.message});
 
 globalThis.chrome?.storage?.onChanged?.addListener((changes,area)=>{

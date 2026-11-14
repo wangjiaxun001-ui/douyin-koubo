@@ -1,5 +1,5 @@
 // Keep the transcript and segment selector open while visiting the destination card.
-const workTab=new URLSearchParams(location.search).get('workTab');
+let workTab=new URLSearchParams(location.search).get('workTab');
 if(!workTab){
  chrome.tabs.query({active:true,currentWindow:true}).then(async ([tab])=>{
   if(!tab?.id)return;
@@ -14,6 +14,9 @@ function draw(x){
  el('start').disabled=busy||starting;el('options').hidden=busy;el('job').hidden=!x;el('result').hidden=!x?.rows.length;if(!x)return;
  el('source').textContent=x.source||'读取作品';el('title').textContent=x.title;el('status').textContent=/play\(\) failed.*interact/i.test(x.message||'')?'请先回到原视频，点一次播放器，再回来重试。':x.message;
  el('progress').textContent=x.duration?timeTag(x.time)+' / '+timeTag(x.duration):'';el('bar').value=x.duration?x.time/x.duration:0;
+ const link=el('openWork');
+ link.hidden=!x.retryListen||busy||!/^\d{10,22}$/.test(x.workId||'');
+ if(!link.hidden)link.href='https://www.douyin.com/video/'+x.workId;
  el('listen').hidden=!x.retryListen||busy;el('listen').disabled=starting;
  el('stop').hidden=!busy||x.phase==='finishing';el('preview').textContent=x.rows.length?(mode==='raw'?transcript(x):scriptText(x)):'';
  const sel=el('clipRow'),rows=x.rows;
@@ -27,9 +30,8 @@ function draw(x){
 chrome.storage.onChanged.addListener((c,area)=>{if(area==='session'&&c.job)draw(c.job.newValue)});
 chrome.storage.session.get('job').then(x=>draw(x.job));
 async function start(listen){
- if(workTab==='none'){el('toast').textContent='请从抖音原视频页点开拾句，再开始提取。';return}
  starting=true;draw(j);el('toast').textContent='';
- try{const tab=workTab?await chrome.tabs.get(Number(workTab)):(await chrome.tabs.query({active:true,currentWindow:true}))[0];const r=await chrome.runtime.sendMessage({to:'bg',op:'start',tab:tab.id,listen,force:el('force').checked});if(r?.error)throw Error(r.error)}
+ try{const tab=await selectSource();if(!tab)return;const r=await chrome.runtime.sendMessage({to:'bg',op:'start',tab:tab.id,listen,force:el('force').checked});if(r?.error)throw Error(r.error)}
  catch(e){el('toast').textContent=e.message}finally{starting=false;draw(j)}
 };
 el('start').onclick=()=>start(false);el('listen').onclick=()=>start(true);
@@ -65,7 +67,7 @@ el('compareJob').onclick=()=>{if(j?.rows.length)openComparison('job='+encodeURIC
 el('syncMetrics').onclick=async()=>{
  const btn=el('syncMetrics');btn.disabled=true;el('toast').textContent='正在读取这条作品的数据…';
  try{
-  const tab=workTab?await chrome.tabs.get(Number(workTab)):(await chrome.tabs.query({active:true,currentWindow:true}))[0];
+  const tab=await selectSource();if(!tab)return;
   if(!/^https:\/\/(?:[\w-]+\.)*(?:douyin|iesdouyin)\.com\//.test(tab?.url||''))throw Error('请在对应的抖音原视频页面点开拾句。');
   const target={tabId:tab.id};
   await chrome.scripting.executeScript({target,files:['metrics.js']});
@@ -79,4 +81,41 @@ el('syncMetrics').onclick=async()=>{
  }catch(e){el('toast').textContent=e.message}finally{btn.disabled=false}
 };
 
-if(workTab==='none')el('lead').textContent='要提取新作品，请先打开抖音原视频，再点工具栏上的拾句。这里仍可查看上次逐字稿。';
+const douyinOrigin='https://www.douyin.com/*';
+function showDisconnected(){
+ workTab='none';
+ el('lead').textContent='先在本窗口打开要提取的抖音作品，再回来连接视频。';
+ el('start').firstChild.textContent='连接视频并提取 ';
+ el('openDouyin').hidden=false;
+}
+async function selectSource(){
+ if(workTab!=='none'){
+  const tab=workTab ? await chrome.tabs.get(Number(workTab)).catch(()=>null)
+                    : (await chrome.tabs.query({active:true,currentWindow:true}))[0];
+  if(ShijuNav.sourceUrl(tab?.url))return tab;
+  showDisconnected();
+ }
+ // Only request the Douyin origin when the user reconnects from a standalone workspace.
+ const allowed=await chrome.permissions.request({origins:[douyinOrigin]});
+ if(!allowed)throw Error('要连接已打开的视频，请允许访问抖音，或在原视频页点击工具栏里的拾句。');
+ const tabs=await chrome.tabs.query({url:douyinOrigin,currentWindow:true});
+ const select=el('sourceTabs'), preferred=select.value;
+ let tab=tabs.find(t=>String(t.id)===preferred);
+ if(!tab && tabs.length===1)tab=tabs[0];
+ if(!tab){
+  select.replaceChildren(new Option('请选择作品',''), ...tabs.map(t=>new Option(t.title||t.url,String(t.id))));
+  el('sourceTools').hidden=!tabs.length;
+  el('toast').textContent=tabs.length?'请选择要处理的抖音标签页，再点一次按钮。':'本窗口还没有打开抖音作品。点「打开抖音」，进入视频后回来重试。';
+  return null;
+ }
+ workTab=String(tab.id);
+ history.replaceState(null,'','?workTab='+workTab);
+ el('sourceTools').hidden=true;el('openDouyin').hidden=true;
+ el('lead').textContent='已连接：'+(tab.title||tab.url);
+ el('start').firstChild.textContent='快速提取当前视频 ';
+ return tab;
+}
+if(workTab==='none')showDisconnected();
+else if(workTab)chrome.tabs.get(Number(workTab)).then(tab=>{
+ if(!ShijuNav.sourceUrl(tab.url))showDisconnected();
+}).catch(showDisconnected);

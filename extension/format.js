@@ -1,6 +1,6 @@
 const timeTag=n=>{n=Math.max(0,Math.floor(n||0));return Math.floor(n/60).toString().padStart(2,'0')+':'+(n%60).toString().padStart(2,'0')};
 const warning=j=>j.phase==='done'?'':j.phase==='fast'||j.phase==='listening'||j.phase==='finishing'?'〔转写中 · 非完整稿〕\n':'〔未完成 · 仅含已提取部分〕\n';
-const transcript=j=>warning(j)+j.rows.map(r=>timeTag(r.s)+'  '+r.t).join('\n');
+const transcript=j=>warning(j)+j.rows.map(r=>r.t).join('\n');
 function scriptText(j){
  // A continuous breath may contain several rhetorical moves, even when ASR emits no punctuation.
  // Subclauses share their source segment's time range; never invent word timings.

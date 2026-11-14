@@ -5,7 +5,7 @@ const dir=path.resolve(__dirname,'../extension');
 (async()=>{
  const server=http.createServer((req,res)=>{
   const name=new URL(req.url,'http://localhost').pathname.slice(1);
-  if(['compare.html','metrics.js','compare.js','navigation.js'].includes(name)){
+  if(['compare.html','metrics.js','rewrite.js','compare.js','navigation.js'].includes(name)){
    res.setHeader('content-type',name.endsWith('js')?'text/javascript; charset=utf-8':'text/html; charset=utf-8');
    res.end(fs.readFileSync(path.join(dir,name)));
   }else res.end('');
@@ -83,6 +83,71 @@ const dir=path.resolve(__dirname,'../extension');
   assert.equal(await p.locator('#projects option').count(),1);
   assert.equal(await p.locator('#topic').inputValue(),'');
   assert.equal(await p.locator('#final-text').inputValue(),'');
+  // Manual comparison and optional AI use the same source columns.
+  assert.equal(await p.locator('#ai-panel').isVisible(),false);
+  const raw=p.locator('#inputs textarea');
+  await raw.nth(0).fill('我的事实和观点。');
+  await raw.nth(1).fill('博主的参考段落。');
+  await p.locator('#ai-toggle').check();
+  await p.locator('#ai-instruction').fill('保留事实，缩短开场');
+  const providers=[
+    ['DeepSeek','https://api.deepseek.com/chat/completions'],
+    ['Gemini','https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent'],
+    ['豆包','https://ark.cn-beijing.volces.com/api/v3/chat/completions']
+  ];
+  for (const [i,[name,url]] of providers.entries()) {
+    await p.locator('#ai-provider').selectOption(name);
+    await p.locator('#ai-key').fill('fixture-key');
+    await p.route(url,async route=>{
+      const req=route.request(),body=req.postDataJSON(),gemini=name==='Gemini';
+      const sent=gemini?body.contents[0].parts[0].text:body.messages[1].content;
+      assert(sent.includes('我的事实和观点。') && sent.includes('缩短开场') && !sent.includes('博主的参考段落'));
+      assert.equal(req.headers()[gemini?'x-goog-api-key':'authorization'],gemini?'fixture-key':'Bearer fixture-key');
+      const result=gemini?{candidates:[{finishReason:'STOP',content:{parts:[{text:name+'版本。'}]}}]}:
+        {choices:[{finish_reason:'stop',message:{content:name+'版本。'}}]};
+      await route.fulfill({json:result});
+    });
+    await p.locator('#ai-generate').click();
+    await p.waitForFunction(n=>document.querySelectorAll('#inputs textarea').length===n,i+3);
+    assert.equal(await raw.nth(i+2).inputValue(),name+'版本。');
+  }
+  await p.locator('#ai-generate').click();
+  await p.waitForFunction(()=>document.querySelectorAll('#inputs textarea').length===6);
+  assert.equal(await raw.nth(0).inputValue(),'我的事实和观点。');
+  assert.equal(await raw.nth(1).inputValue(),'博主的参考段落。');
+  const endpoint=providers[2][1];await p.unroute(endpoint);
+  let release;const paused=new Promise(r=>{release=r});
+  await p.route(endpoint,async route=>{await paused;await route.fulfill({json:{choices:[{finish_reason:'stop',message:{content:'已取消的版本'}}]}}).catch(()=>{})});
+  const started=p.waitForRequest(endpoint);
+  await p.locator('#ai-generate').click();await started;
+  await p.locator('#ai-toggle').uncheck();release();
+  await p.locator('#add-source').click();await raw.last().fill('另一位博主稿。');
+  await p.locator('#import').click();
+  assert.equal(await p.locator('[data-cell="6/开头/0"]').inputValue(),'另一位博主稿。');
+  await p.reload();assert.equal(await raw.count(),7);
+  assert.equal(await p.locator('#ai-toggle').isChecked(),false);
+  assert.equal(await p.locator('#ai-key').inputValue(),'');
+  assert(!(await p.evaluate(()=>JSON.stringify(localStorage))).includes('fixture-key'));
+  await p.locator('[data-pick="1/开头/0"]').check();
+  await p.locator('[data-pick="6/开头/0"]').check();
+  await p.locator('#final-text').fill('手写终稿');
+  await p.locator('[data-step=intake]').click();
+  const remove=p.locator('.source-heading button');
+  p.once('dialog',d=>d.dismiss());await remove.nth(1).click();
+  assert.equal(await raw.count(),7);
+  p.once('dialog',d=>{assert(d.message().includes('博主参考稿'));return d.accept()});
+  await remove.nth(1).click();await p.reload();
+  assert.equal(await raw.count(),6);
+  assert.equal(await raw.nth(0).inputValue(),'我的事实和观点。');
+  assert.equal(await raw.nth(5).inputValue(),'另一位博主稿。');
+  assert.deepEqual(await queue(),['5/开头/0']);
+  assert.equal(await p.locator('#final-text').inputValue(),'手写终稿');
+  await p.locator('[data-step=intake]').click();
+  while(await remove.count()){p.once('dialog',d=>d.accept());await remove.last().click()}
+  await p.reload();assert.equal(await raw.count(),0);
+  await p.locator('#add-source').click();await raw.first().fill('重新添加的博主稿');
+  await p.locator('#import').click();
+  assert.equal(await p.locator('[data-cell="0/开头/0"]').inputValue(),'重新添加的博主稿');
   await p.setViewportSize({width:390,height:800});assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   assert.deepEqual(errors,[]);console.log('PASS Google Chrome: exact-work metrics, missing vs zero, verified refresh replaces manual counts, old draft migration, import, navigation, final text, narrow viewport.');
  }finally{await b?.close();server.close()}

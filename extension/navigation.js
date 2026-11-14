@@ -12,8 +12,8 @@ globalThis.ShijuNav=(()=>{
   const targets=ctx.filter(t=>t.tabId>=0&&t.documentUrl?.startsWith(home()+'?workTab='));
   const chosen=targets.find(t=>t.tabId===r?.id&&t.documentUrl.split('#')[0]===r.url);
   const focus=async t=>{await chrome.tabs.update(t.tabId,{active:true});await chrome.windows.update(t.windowId,{focused:true})};
-  if(chosen){await focus(chosen);return}
   const hasSource=async id=>/^\d+$/.test(String(id))&&sourceUrl((await chrome.tabs.get(Number(id)).catch(()=>null))?.url);
+  if(chosen&&await hasSource(new URL(chosen.documentUrl).searchParams.get('workTab'))){await focus(chosen);return}
   let id=r?.url?.startsWith(home()+'?')?new URL(r.url).searchParams.get('workTab'):null;
   if(!await hasSource(id))id=await hasSource(job?.tab)?job.tab:null;
   for(const t of targets){const bound=new URL(t.documentUrl).searchParams.get('workTab');

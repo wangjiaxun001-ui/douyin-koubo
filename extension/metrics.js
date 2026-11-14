@@ -12,7 +12,13 @@
   const a=item.author||{},s=item.statistics||{};
   return {fans:count(a.follower_count??a.followerCount),likes:count(s.digg_count??s.diggCount),comments:count(s.comment_count??s.commentCount)};
  }
- function workId(){return new URL(location.href).searchParams.get('modal_id')||location.pathname.match(/\/(?:video|note)\/(\d+)/)?.[1]||''}
+ function workId(){
+  const urlId=new URL(location.href).searchParams.get('modal_id')||location.pathname.match(/\/(?:video|note)\/(\d+)/)?.[1];
+  if(urlId)return urlId;
+  const slides=document.querySelectorAll('[data-e2e="feed-active-video"][data-e2e-vid]');
+  const id=slides.length===1?slides[0].getAttribute('data-e2e-vid'):'';
+  return /^\d+$/.test(id)?id:'';
+ }
  async function read(id){
   const out={fans:'',likes:'',comments:''};
   if(!id || workId()!==id)return out;

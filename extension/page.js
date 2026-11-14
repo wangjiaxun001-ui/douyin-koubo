@@ -2,9 +2,16 @@
 (()=>{
 if(globalThis.__shiju)return;
 const delay=n=>new Promise(r=>setTimeout(r,n));
-const key=()=>new URL(location.href).searchParams.get('modal_id')||location.pathname.match(/(?:video|note)\/(\d+)/)?.[1]||'';
+const key=()=>ShijuMetrics.workId();
+function activeSlide(){
+ const id=key();
+ return id && /^\d+$/.test(id) && document.querySelector('[data-e2e="feed-active-video"][data-e2e-vid="'+id+'"]');
+}
 function visible(v){const r=v.getBoundingClientRect();return Math.max(0,Math.min(r.right,innerWidth)-Math.max(r.left,0))*Math.max(0,Math.min(r.bottom,innerHeight)-Math.max(r.top,0))}
-function pick(){return [...document.querySelectorAll('video')].filter(v=>visible(v)>100&&v.readyState>=1).sort((a,b)=>Number(!!b.closest('[data-e2e="player-container"]'))-Number(!!a.closest('[data-e2e="player-container"]'))||visible(b)-visible(a)||Number(!b.paused)-Number(!a.paused))[0]}
+function pick(){
+ const root=activeSlide()||document;
+ return [...root.querySelectorAll('video')].filter(v=>visible(v)>100&&v.readyState>=1).sort((a,b)=>visible(b)-visible(a)||Number(!b.paused)-Number(!a.paused))[0];
+}
 function complete(rows,d){
  rows=rows.filter(r=>r.t&&Number.isFinite(r.s)&&Number.isFinite(r.e)&&r.s>=0&&r.e>r.s&&r.s<d).sort((a,b)=>a.s-b.s);
  if(!rows.length||rows[0].s>Math.max(2,d*.08)||rows.at(-1).e<d-Math.min(4,d*.12)||rows.at(-1).e>d+3)return [];
@@ -63,7 +70,7 @@ globalThis.__shiju=async(op,token,force)=>{
   if(metricId)ShijuMetrics.read(metricId).then(values=>chrome.runtime.sendMessage({to:'bg',op:'workMetrics',workId:metricId,token,values})).catch(()=>{});
   const rows=force?[]:await subtitles(v);
   if(key()!==j.id||v.currentSrc!==j.src)throw Error('作品已切换，请重新提取。');
-  return {duration:v.duration,title:document.title,rows,workId:j.id};
+  return {duration:v.duration,title:activeSlide()?.querySelector('[data-e2e="video-desc"]')?.textContent?.trim()||document.title,rows,workId:j.id};
  }
  if(!j||token!==j.token)throw Error('视频页面已切换，请重新开始');
  const x=j,v=x.v;

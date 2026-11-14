@@ -3,3 +3,5 @@
 @media(min-width:600px){body{width:min(760px,94%);margin:24px auto}pre{max-height:33vh}#clipTools select{font:inherit}}
 
 .flow{display:flex;gap:4px;margin:0 0 18px;border-bottom:1px solid #cdd8cf;padding-bottom:6px}.flow>*{flex:1;text-align:center;color:#345544;background:transparent;font:600 13px/1.5 system-ui;text-decoration:none;padding:7px 3px;border:0;border-radius:6px}.flow [aria-current]{background:#dfebdf}.flow button:hover{background:#e9efdd}#syncMetrics{margin-top:8px}.sync-hint{display:block;margin-top:4px}
+
+#sourceTools select{width:100%;font:inherit;margin-bottom:8px}#openDouyin{color:#215445}
