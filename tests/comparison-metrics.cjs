@@ -38,7 +38,7 @@ const dir=path.resolve(__dirname,'../extension');
    chrome.runtime={getURL:s=>'chrome-extension://example/'+s,getContexts:async()=>[{tabId:31,windowId:9,documentUrl:'chrome-extension://example/popup.html?workTab=17'}]};
    const get=chrome.storage.session.get;
    chrome.storage.session.get=async k=>Array.isArray(k)?{extractReturn:{id:31,url:'chrome-extension://example/popup.html?workTab=17'}}:get(k);
-   chrome.tabs={update:async id=>window.focusedExtract=id};chrome.windows={update:async()=>{}};
+   chrome.tabs={get:async id=>id===17?{url:'https://www.douyin.com/video/123'}:null,update:async id=>window.focusedExtract=id};chrome.windows={update:async()=>{}};
   });
   await p.locator('#return-extract').click();assert.equal(await p.evaluate(()=>window.focusedExtract),31);const badge=p.locator('.metric-strip').first();
   assert.equal(await p.locator('#final-text').inputValue(),'手改的旧终稿');
@@ -148,6 +148,33 @@ const dir=path.resolve(__dirname,'../extension');
   await p.locator('#add-source').click();await raw.first().fill('重新添加的博主稿');
   await p.locator('#import').click();
   assert.equal(await p.locator('[data-cell="0/开头/0"]').inputValue(),'重新添加的博主稿');
+  // Reopen the old all-in-opening result and split the original without repasting it.
+  const script='如果你厌倦了刻意抢眼的潮流穿搭不妨试试带着复古氛围的小镇穿搭本期拆解这套随性松弛的小镇穿搭逻辑'+
+    '这套美学诞生于九十年代美国中西部偏远地下摇滚圈人烟稀少的平原之上当地少年终日面对一望无际的玉米地与空旷公路'+
+    '青春期的迷茫遗憾无处安放他们选择舒缓绵长的吉他旋律诉说心事久而久之这份独属于平原小镇的低沉情绪从音乐延伸形成了一套完整的视觉穿搭体系'+
+    '想要复刻正宗的 Midwest emo 氛围选色与面料是基础他们常用水洗与褪色卡其灰棕和藏蓝为主色调上衣优先宽松格纹衬衫夏天选择短袖'+
+    '然后下装多配水洗牛仔裤裤脚自然磨白随意卷边鞋子可以选择旧帆布鞋再搭配一个帆布包和一副有线耳机'+
+    '为什么我们从未经历过小镇生活却依旧对这种风格心生向往也许这套穿搭让人们在忙碌日常里找回一点松弛';
+  await p.evaluate(script=>{
+    const key='shiju-script-editor.v1', lib=JSON.parse(localStorage.getItem(key));
+    const draft=lib.projects.find(d=>d.id===lib.active);
+    draft.raw[0]=draft.imported[0]=draft.cells['0/开头/0']=script;
+    draft.finalText='已经手改的成稿';
+    localStorage.setItem(key,JSON.stringify(lib));
+  },script);
+  await p.reload();
+  assert(await p.locator('#import').isEnabled());
+  p.once('dialog',d=>d.accept());await p.locator('#import').click();
+  const pieces=await p.locator('#matrix textarea').evaluateAll(els=>els.map(e=>e.value));
+  assert(pieces.length>=4 && pieces.every(t=>t.trim()));
+  assert(pieces.at(-1).startsWith('为什么我们'));
+  assert.equal(pieces.join(''),script);
+  assert.equal(await p.locator('#final-text').inputValue(),'已经手改的成稿');
+  await p.locator('[data-group="中间"]').click();
+  assert.equal(await p.locator('#matrix textarea').count(),pieces.length-2);
+  await p.reload();
+  assert(await p.locator('#import').isDisabled());
+  assert.deepEqual(await p.locator('#matrix textarea').evaluateAll(els=>els.map(e=>e.value)),pieces);
   await p.setViewportSize({width:390,height:800});assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   assert.deepEqual(errors,[]);console.log('PASS Google Chrome: exact-work metrics, missing vs zero, verified refresh replaces manual counts, old draft migration, import, navigation, final text, narrow viewport.');
  }finally{await b?.close();server.close()}

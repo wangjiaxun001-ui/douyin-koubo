@@ -1,5 +1,5 @@
 // Runs in the isolated world of the selected video tab, with the page's ordinary read access.
-globalThis.__shijuReadTrack = async function (video, workId, signal) {
+globalThis.__shijuReadTrack = async function (video, items, signal, playerUrls) {
   const limit = 48 * 1024 * 1024;
   if (video.duration > 20 * 60) throw Error('这条视频超过快速模式的 20 分钟上限');
   const allowed = value => {
@@ -8,29 +8,25 @@ globalThis.__shijuReadTrack = async function (video, workId, signal) {
       return u.protocol === 'https:' && (u.origin === location.origin || /(^|\.)douyinvod\.com$/.test(u.hostname));
     } catch { return false; }
   };
-  const candidates = [];
-  if (workId) {
-    const detail = performance.getEntriesByType('resource').map(e => new URL(e.name, location.href)).reverse()
-      .find(u => u.origin === location.origin && u.pathname === '/aweme/v1/web/aweme/detail/' && u.searchParams.get('aweme_id') === workId);
-    if (detail) {
-      try {
-        const r = await fetch(detail.href, {signal: AbortSignal.any([signal, AbortSignal.timeout(4000)])});
-        const item = r.ok && (await r.json()).aweme_detail;
-        if (String(item?.aweme_id) === workId) {
-          for (const {audio_meta: audio} of item.video?.bit_rate_audio || []) {
-            if (!audio || audio.size > limit) continue;
-            const urls = audio.url_list || {};
-            candidates.push(urls.main_url, urls.backup_url);
-          }
-        }
-      } catch { signal.throwIfAborted(); }
+  const candidates = Array.isArray(playerUrls) ? playerUrls.filter(allowed) : [];
+  for (const item of items) {
+    const media = item.video || {};
+    for (const track of media.bit_rate_audio || media.bitRateAudio || []) {
+      const audio = track.audio_meta || track.audioMeta;
+      if (!audio || audio.size > limit) continue;
+      const urls = audio.url_list || audio.urlList || {};
+      candidates.push(...(Array.isArray(urls) ? urls : [urls.main_url, urls.backup_url]));
     }
+    const address = media.play_addr || media.playAddr;
+    if (address && !(address.data_size > limit)) candidates.push(...(address.url_list || address.urlList || []));
   }
   if (allowed(video.currentSrc)) candidates.push(video.currentSrc);
+  const deadline = AbortSignal.timeout(12000);
   for (const url of [...new Set(candidates.filter(allowed))].slice(0, 4)) {
+    if (deadline.aborted) break;
     const request = new AbortController();
     try {
-      const r = await fetch(url, {credentials:'omit', signal:AbortSignal.any([signal, request.signal, AbortSignal.timeout(12000)])});
+      const r = await fetch(url, {credentials:'omit', signal:AbortSignal.any([signal, deadline, request.signal, AbortSignal.timeout(6500)])});
       if (!r.ok || !r.body || Number(r.headers.get('content-length')) > limit) continue;
       const reader = r.body.getReader(), parts = [];
       let size = 0;

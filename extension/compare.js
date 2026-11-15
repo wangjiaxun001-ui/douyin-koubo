@@ -65,6 +65,46 @@ function rowName(key) {
   const [,group,index] = key.split('/');
   return group==='中间' ? '中间 '+(Number(index)+1) : group;
 }
+const words = new Intl.Segmenter('zh', {granularity:'word'});
+const topicStart = /^(?:本期|接下来|首先|其次|然后|另外|比如|举个例子|换句话说|久而久之|不同于|想要|最后|总之|说到底|为什么|为何)/u;
+
+function splitLongPassage(text, minParts=2) {
+  if (text.length <= 110) return [text];
+  const boundaries = [];
+  for (const {index,segment,isWordLike} of words.segment(text)) {
+    if (!index || !isWordLike) continue;
+    const previous = text[index-1];
+    const priority = /[。！？.!?]/u.test(previous) ? 4 : /[，,；;：:、]/u.test(previous) ? 3 :
+      topicStart.test(text.slice(index,index+5)) ? 2 : /\s/u.test(previous) ? 1 : 0;
+    boundaries.push({index,priority});
+  }
+  // Reserve a closing passage when the speaker signals a wrap-up or a closing question.
+  const closing = boundaries.findLast(({index})=>text.length-index>=15 && text.length-index<=100 &&
+    index>=text.length/2 && /^(?:最后|总之|说到底|归根结底|为什么我们|为何我们)/u.test(text.slice(index,index+5)));
+  const end = closing?.index ?? text.length;
+  const count = Math.max(minParts-Number(Boolean(closing)), Math.round(end / 85));
+  const parts = [];
+  let start = 0, cursor = 0;
+  for (let left=count; left>1; left--) {
+    const size = (end-start)/left;
+    const target = start+size;
+    const low = target-size*0.35, high = target+size*0.35;
+    while (cursor<boundaries.length && boundaries[cursor].index<low) cursor++;
+    let best;
+    for (;cursor<boundaries.length && boundaries[cursor].index<=high;cursor++) {
+      const point = boundaries[cursor];
+      if (!best || point.priority>best.priority || (point.priority===best.priority &&
+          Math.abs(point.index-target)<Math.abs(best.index-target))) best=point;
+    }
+    if (!best) continue;
+    parts.push(text.slice(start,best.index));
+    start=best.index;
+  }
+  parts.push(text.slice(start,end));
+  if (closing) parts.push(text.slice(end));
+  return parts;
+}
+
 function splitDraft(raw) {
   const result={'开头':[], '中间':[], '结尾':[]};
   const lines=raw.replace(/\r\n?/g,'\n').split('\n');
@@ -76,9 +116,12 @@ function splitDraft(raw) {
       if(match){group=match[1]==='正文'?'中间':match[1];if(match[2].trim())result[group].push(match[2].trim());}
       else if(line.trim())result[group].push(line.trim());
     }
+    result['中间']=result['中间'].flatMap(line=>splitLongPassage(line));
   } else {
     let parts=lines.map(line=>line.trim()).filter(Boolean);
     if(parts.length===1)parts=parts[0].match(/[^。！？!?]+(?:[。！？!?]+[”’」』）)]*)?|[。！？!?]+/g)?.map(s=>s.trim()).filter(Boolean)||parts;
+    const minParts=parts.length===1 ? 3 : 2;
+    parts=parts.flatMap(part=>splitLongPassage(part,minParts));
     if(parts.length)result['开头']=[parts.shift()];
     if(parts.length)result['结尾']=[parts.pop()];
     result['中间']=parts;
@@ -104,8 +147,16 @@ function refreshProjects(){
     option.value=p.id; option.selected=p===project; $('projects').append(option);
   });
 }
+function needsImport(raw,col){
+  if(!raw.trim())return false;
+  if(raw!==project.imported[col])return true;
+  // Offer another import for a saved draft that the old splitter put entirely in the opening.
+  if(raw.trim().length<=110 || project.cells[sourceKey(col,'开头')]!==raw.trim())return false;
+  if(Object.entries(project.cells).some(([key,text])=>key.startsWith(col+'/') && key!==sourceKey(col,'开头') && text.trim()))return false;
+  return splitDraft(raw)['结尾'].length>0;
+}
 function refreshImport(){
-  $('import').disabled=!project.raw.some((v,i)=>v.trim() && v!==project.imported[i]);
+  $('import').disabled=!project.raw.some(needsImport);
 }
 // Match the matrix: read each row from left to right, then move down.
 function byTablePosition(a,b){
@@ -125,7 +176,7 @@ function activate(p){
   refreshProjects(); $('topic').value=p.title; $('filename').value=p.filename;
   $('filename').placeholder=(p.title.trim()||'新选题')+'-逐字稿';
   for(const [i,area] of [...$('inputs').querySelectorAll('textarea')].entries())area.value=p.raw[i];
-  $('intake').open=!Object.values(p.cells).some(Boolean)||p.raw.some((v,i)=>v.trim()&&v!==p.imported[i]);
+  $('intake').open=!Object.values(p.cells).some(Boolean)||p.raw.some(needsImport);
   refreshImport(); renderTable(); renderQueue(); save();
 }
 function exportText(){
@@ -321,7 +372,7 @@ $('delete-project').onclick=()=>{
 };
 $('projects').onchange=e=>activate(library.projects.find(p=>p.id===e.target.value));
 $('import').onclick=()=>{
-  const changed=project.names.map((_,i)=>i).filter(i=>project.raw[i].trim()&&project.raw[i]!==project.imported[i]);
+  const changed=project.names.map((_,i)=>i).filter(i=>needsImport(project.raw[i],i));
   const replace=changed.filter(i=>Object.keys(project.cells).some(k=>k.startsWith(i+'/')&&project.cells[k])||project.order.some(k=>k.startsWith(i+'/')));
   if(replace.length&&!confirm('重新分段会替换 '+replace.map(i=>project.names[i]).join('、')+' 栏的编辑内容，并移除这些栏的已选段落。继续吗？'))return;
   changed.forEach(i=>placeDraft(i,project.raw[i]));filter='全部';renderTable();renderQueue();refreshImport();save();$('intake').open=false;go('compare');
