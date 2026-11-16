@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+base=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$base/runtime/bin/python" -I "$base/kaka_host.py"

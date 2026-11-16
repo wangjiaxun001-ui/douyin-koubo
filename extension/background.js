@@ -1,5 +1,13 @@
+importScripts('precision.js');
 let state=null, writes=Promise.resolve();
-const init=chrome.storage.session.get('job').then(r=>{state=r.job||null});
+const init=chrome.storage.session.get('job').then(async r=>{
+ state=r.job||null;
+ if(running(state)){
+  state.phase=state.rows?.length?'partial':'error';
+  state.message='浏览器中断了上次提取，可以重新提取。';
+  state.endedAt=Date.now();await save();
+ }
+});
 const running=j=>j&&['probe','loading','fast','finishing'].includes(j.phase);
 const valid=url=>{try{const u=new URL(url);return u.protocol==='https:'&&/(^|\.)(douyin\.com|iesdouyin\.com)$/.test(u.hostname)}catch{return false}};
 function save(){const snapshot=structuredClone(state);writes=writes.catch(()=>{}).then(()=>chrome.storage.session.set({job:snapshot}));return writes}
@@ -18,7 +26,7 @@ async function end(j,phase,message){
 }
 // The player exposes its normalized work on a component above the video. Read only
 // addresses of that exact work; adjacent feed items must never supply the audio.
-function playerAddresses(id){
+function playerAddresses(id, videoOnly){
  if(!/^\d+$/.test(id||''))return [];
  const seen=new Set(),urls=[];
  for(const video of document.querySelectorAll('video')){
@@ -29,8 +37,8 @@ function playerAddresses(id){
     const item=f.memoizedProps?.awemeInfo;
     if(String(item?.awemeId)!==id||!item.video)continue;
     const m=item.video;
-    const add=(list,size)=>{if(!(size>48*1024*1024)&&Array.isArray(list))for(const x of list){const src=typeof x==='string'?x:x?.src;if(typeof src==='string'&&src.length<16384&&!urls.includes(src))urls.push(src)}};
-    if(Array.isArray(m.bitRateAudioList))for(const audio of m.bitRateAudioList)add(audio.urlList,audio.size);
+    const add=(list,size)=>{if(!(size>(videoOnly?112:48)*1024*1024)&&Array.isArray(list))for(const x of list){const src=typeof x==='string'?x:x?.src;if(typeof src==='string'&&src.length<16384&&!urls.includes(src))urls.push(src)}};
+    if(!videoOnly && Array.isArray(m.bitRateAudioList))for(const audio of m.bitRateAudioList)add(audio.urlList,audio.size);
     add(m.playAddr,m.playAddrSize);
     if(urls.length)return urls.slice(0,8);
    }
@@ -72,22 +80,26 @@ async function fastTranscribe(j){
  await off(j,'abort');guard(j);j.time=j.duration;
  const secondsSinceStart=t=>((t-j.startedAt)/1000).toFixed(1);
  const result=j.rows.length
-  ? '整条音轨已转写。首段 '+secondsSinceStart(j.firstAt)+' 秒，整篇 '+secondsSinceStart(Date.now())+' 秒。'
+  ? (j.mode==='precise'?'本机精校未就绪，已使用快速识别。':'')+'整条音轨已转写。首段 '+secondsSinceStart(j.firstAt)+' 秒，整篇 '+secondsSinceStart(Date.now())+' 秒。'
   : '整条音轨未识别到清晰人声。';
  await end(j,j.rows.length?'done':'empty',result);
 }
-async function start(tab,force){
+async function start(tab,force,mode,terms,accepted){
  if(running(state))throw Error('已有视频正在处理');
  const t=await chrome.tabs.get(tab);
  if(!valid(t.url))throw Error('请在 Chrome 中打开抖音分享链接，等作品页面出现后再点提取。');
  if(running(state))throw Error('已有视频正在处理');
+ const hasNative=mode==='precise' && await chrome.permissions.contains({permissions:['nativeMessaging']});
+ if(running(state))throw Error('已有视频正在处理');
  const previous=state;
- const reuse=!force&&previous?.phase==='done'&&previous.workId&&previous.rows?.some(r=>r.t&&r.t!=='〔此处未识别清楚〕');
- const j=state={token:crypto.randomUUID(),startedAt:Date.now(),tab,phase:'probe',message:'正在读取这条视频的字幕…',title:t.title||'抖音作品',duration:0,time:0,rows:[],source:''};await save();
+ const matchingMode=!previous?.forceVoice && previous?.mode===mode && (previous.terms||'')===terms &&
+   (!hasNative||['原声精校','画面字幕'].includes(previous.source));
+ const reuse=!force&&previous?.phase==='done'&&(previous.source==='网页字幕'||matchingMode)&&previous.workId&&previous.rows?.some(r=>r.t&&r.t!=='〔此处未识别清楚〕');
+ const j=state={token:crypto.randomUUID(),startedAt:Date.now(),tab,mode,terms,forceVoice:force,phase:'probe',message:'正在读取这条视频的字幕…',title:t.title||'抖音作品',duration:0,time:0,rows:[],source:''};await save();accepted();
  try{
   await chrome.scripting.executeScript({target:{tabId:tab},files:['metrics.js','fast.js','page.js']});guard(j);
-  const p=await page(j,'probe',{skip:force,previousId:reuse?previous.workId:null,previousDuration:reuse?previous.duration:0});guard(j);Object.assign(j,{title:p.title,duration:p.duration,workId:p.workId});
-  if(reuse&&p.reuse){
+  const p=await page(j,'probe',{skip:force,previousCaptions:previous?.source==='网页字幕',previousId:reuse?previous.workId:null,previousDuration:reuse?previous.duration:0});guard(j);Object.assign(j,{title:p.title,duration:p.duration,workId:p.workId});
+  if(reuse&&p.reuse&&!p.rows.length){
    Object.assign(j,{rows:previous.rows,source:previous.source,time:p.duration});
    if(!j.metricsAt)Object.assign(j,{metrics:previous.metrics,metricsAt:previous.metricsAt});
    await end(j,'done','已读取这条作品上次完成的逐字稿。');return
@@ -95,6 +107,8 @@ async function start(tab,force){
   if(p.rows.length){j.rows=p.rows;j.source='网页字幕';j.time=p.duration;await end(j,'done','已提取网页字幕。可对照原声核对。');return}
 
   j.phase='loading';j.source='本地语音识别';j.message='未使用字幕，正在准备本地识别…';await save();
+  if(await tryPrecision(j))return;
+  guard(j);
   if(!(await chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT']})).length)await chrome.offscreen.createDocument({url:'off.html',reasons:['WORKERS'],justification:'用本地识别模型处理当前作品的完整音轨'});
   guard(j);
   j.source='快速音轨转写';j.message='正在读取当前作品的音轨…';await save();
@@ -104,14 +118,20 @@ async function start(tab,force){
 }
 async function stop(j,why){
  if(!running(j)||j.phase==='finishing')return;
- j.phase='finishing';await save();
+ j.phase='finishing';precisionSessions.get(j.token)?.close();await save();
  await off(j,'abort').catch(()=>{});await end(j,'partial',why);
 }
 chrome.runtime.onMessage.addListener((m,s,reply)=>{
  if(m.to!=='bg')return;
+ if(m.op==='start'){
+  let acknowledged=false;
+  init.then(()=>start(m.tab,!!m.force,m.mode==='fast'?'fast':'precise',String(m.terms||'').trim().slice(0,180),()=>{
+   acknowledged=true;reply({ok:true});
+  })).catch(error=>{if(!acknowledged)reply({error:error.message})});
+  return true;
+ }
  (async()=>{
   await init;
-  if(m.op==='start'){await start(m.tab,!!m.force);return}
   const j=state;if(!j||j.token!==m.token)return;
   if(m.op==='workMetrics'&&s.tab?.id===j.tab&&/^\d+$/.test(m.workId)&&(!j.workId||j.workId===m.workId)){
    j.metrics=m.values;j.metricsAt=Date.now();j.workId=m.workId;await save();return;

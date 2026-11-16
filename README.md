@@ -55,3 +55,28 @@ tests/browser.cjs 使用 Chrome for Testing 的真实工具栏弹窗、暂停的
 在「录入文案与作品数据」粘贴自己的原稿。打开「启用 AI 改稿」，选择原稿栏和 DeepSeek、Gemini 或豆包，填写修改要求和该服务的 API Key，点击「根据原稿生成改稿」。如有需要可更换模型 ID。每次生成一版，保留原稿及已有改稿，结果可继续编辑、分段和挑选。API Key 只用于当前页面，不写入选题库。请求直接发往所选服务，额度和计费以该账户为准。
 
 没有 API Key 时，可点「复制改稿提示词」，粘到常用 AI 对话中，再将回复贴回文案栏。关闭 AI 后可继续点「＋ 添加博主文稿」、粘贴参考稿，再点「分段并对比」。旧选题保留原有栏目。
+
+## 安装卡卡字幕（macOS Chrome）
+
+在拾句项目根目录运行以下命令，需要 Python 3.10 至 3.12。用 Chrome 加载本项目的 `extension` 目录；若更换目录，重新运行注册脚本。
+
+```sh
+KAKA_DIR="$HOME/Library/Application Support/Shiju/VideoCaptioner"
+python3.12 -m venv "$KAKA_DIR/runtime"
+"$KAKA_DIR/runtime/bin/python" -m pip install videocaptioner==1.4.2 httpx==0.28.1
+"$KAKA_DIR/runtime/bin/python" native/register_kaka.py
+```
+
+重新加载拾句，提取一篇逐字稿，点「卡卡字幕 · 断句校对」，首次使用按 Chrome 提示允许连接本机应用。卡卡校对页保留网页字幕或识别引擎提供的每行文字及起止时间，可逐句编辑、复制纯文字或导出 SRT。校对稿单独暂存在当前浏览器会话中。
+
+可选的「AI 校正错字」使用卡卡自带的校正提示词。填入自己的 DeepSeek 密钥和模型 ID，点发送按钮后才会提交字幕文字。密钥只用于本次页面，不写入存储。
+
+
+原声精校需要安装 faster-whisper、简繁转换和本机模型。安装一次后即可离线运行。在上述环境执行：
+
+```sh
+"$KAKA_DIR/runtime/bin/python" -m pip install faster-whisper==1.2.1 opencc-python-reimplemented==0.1.7 pyobjc-framework-Vision Pillow
+"$KAKA_DIR/runtime/bin/python" -c 'from faster_whisper.utils import download_model; import sys; download_model("Systran/faster-whisper-small", output_dir=sys.argv[1])' "$KAKA_DIR/models/whisper-small"
+```
+
+「快速提取当前视频」优先使用完整网页字幕。没有字幕时，本机精校用原声中的词时间、停顿和标点分行，保留说话之间的空白。精校用时较长，可在「提取选项」切换快速识别，也可填写本条视频的人名、品牌名提示精校。对只有画面字幕的作品，精校模式会在本机用 macOS Vision 寻找与原声相符的字幕位置，按换行采样（约 0.3 秒）。字幕读取不完整时使用原声结果；勾选「忽略网页字幕，按原声重新听写」也会跳过画面识别。

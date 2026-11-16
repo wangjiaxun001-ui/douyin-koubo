@@ -1,3 +1,7 @@
 
 # Private, per-install observations from the local comparison library
 /extension/local-snapshots.json
+
+# Installed locally for the optional VideoCaptioner integration
+/.kaka-runtime
+__pycache__/

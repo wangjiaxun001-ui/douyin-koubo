@@ -48,6 +48,31 @@ globalThis.__shijuReadTrack = async function (video, items, signal, playerUrls) 
   throw Error('没有读到可用的完整音轨');
 };
 
+globalThis.__shijuVideoBytes = async function(video, items, urls, signal) {
+  const limit = 112 * 1024 * 1024;
+  const candidates = [...urls, ...items.flatMap(item => item.video?.play_addr?.url_list || []), video.currentSrc];
+  const deadline = AbortSignal.timeout(16000);
+  for (const value of [...new Set(candidates)].slice(0,6)) {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'https:' || !(url.origin === location.origin || /(^|\.)douyinvod\.com$/.test(url.hostname))) continue;
+      const r = await fetch(url,{signal:AbortSignal.any([signal,deadline]),credentials:'omit'});
+      if (!r.ok || !r.body || Number(r.headers.get('content-length')) > limit) {await r.body?.cancel(); continue;}
+      const reader = r.body.getReader(), chunks = [];
+      let size = 0;
+      for (;;) {
+        const {done,value} = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > limit) { await reader.cancel(); break; }
+        chunks.push(value);
+      }
+      if (size && size <= limit) return new Blob(chunks);
+    } catch {signal.throwIfAborted(); if(deadline.aborted)break;}
+  }
+  return null;
+};
+
 globalThis.__shijuSamples = function (buffer, offset) {
   const count = Math.min(64000, buffer.length - offset);
   const pcm = new Int16Array(count);

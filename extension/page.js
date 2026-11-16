@@ -83,7 +83,7 @@ globalThis.__shiju=async(op,token,force)=>{
   const metricId=j.id;
   if(metricId)ShijuMetrics.read(metricId).then(values=>chrome.runtime.sendMessage({to:'bg',op:'workMetrics',workId:metricId,token,values})).catch(()=>{});
   const reuse=!!x.id && x.id===force.previousId && x.duration===force.previousDuration;
-  const rows=force.skip||reuse?[]:await subtitles(v,x.workItems);
+  const rows=force.skip||(reuse&&force.previousCaptions)?[]:await subtitles(v,x.workItems);
   if(j!==x||key()!==x.id||v.currentSrc!==x.src)throw Error('作品已切换，请重新提取。');
   return {duration:v.duration,title:activeSlide()?.querySelector('[data-e2e="video-desc"]')?.textContent?.trim()||document.title,rows,workId:j.id,reuse};
  }
@@ -91,6 +91,17 @@ globalThis.__shiju=async(op,token,force)=>{
  const x=j,v=x.v;
  if(op==='release'){cleanup();return}
  if(!v.isConnected||v.currentSrc!==x.src||key()!==x.id)throw Error('作品已切换，请重新开始');
+ if(op==='validate')return true;
+ if(op==='videoBytes'){
+  x.picture=await __shijuVideoBytes(v,await x.workItems(),force,x.controller.signal);
+  return x.picture?.size||0;
+ }
+ if(op==='videoChunk'){
+  const bytes=new Uint8Array(await x.picture.slice(force,force+384000).arrayBuffer());
+  let data='';
+  for(let i=0;i<bytes.length;i+=8192)data+=String.fromCharCode(...bytes.subarray(i,i+8192));
+  return {size:bytes.length,data:btoa(data)};
+ }
  if(op==='readTrack'){
   x.audio=await globalThis.__shijuReadTrack(v,await x.workItems(),x.controller.signal,force);
   if(j!==x || key()!==x.id || v.currentSrc!==x.src)throw Error('作品已切换');

@@ -10,6 +10,7 @@ if(!workTab){
 }
 const el=id=>document.getElementById(id);let j,mode='raw',starting=false;
 function draw(x){
+ syncKakaJob(x?.token);
  j=x;const busy=['probe','loading','listening','fast','finishing'].includes(x?.phase);
  el('start').disabled=busy||starting;el('options').hidden=busy;el('job').hidden=!x;el('result').hidden=busy||!x?.rows.length;if(!x)return;
  el('source').textContent=x.source||'读取作品';el('title').textContent=x.title;el('status').textContent=x.message;
@@ -19,7 +20,9 @@ function draw(x){
  if(!link.hidden)link.href='https://www.douyin.com/video/'+x.workId;
  el('stop').hidden=!busy||x.phase==='finishing';el('preview').textContent=!busy&&x.rows.length?(mode==='raw'?transcript(x):scriptText(x)):'';
  const sel=el('clipRow'),rows=x.rows;
- if(sel.dataset.job!==x.token||sel.options.length>rows.length){sel.replaceChildren();sel.dataset.job=x.token}
+ if(sel.dataset.job!==x.token||sel.dataset.source!==x.source||sel.options.length>rows.length){
+  sel.replaceChildren();sel.dataset.job=x.token;sel.dataset.source=x.source;
+ }
  // Incoming progress must not collapse an open selector or reset the chosen sentence.
  for(let i=sel.options.length;i<rows.length;i++)sel.add(new Option(timeTag(rows[i].s)+'　'+rows[i].t,String(i)));
  el('sendClip').disabled=!/^\d{10,22}$/.test(x.workId||'')||!rows.length;
@@ -28,9 +31,11 @@ function draw(x){
 }
 chrome.storage.onChanged.addListener((c,area)=>{if(area==='session'&&c.job)draw(c.job.newValue)});
 chrome.storage.session.get('job').then(x=>draw(x.job));
+el('asrMode').value=localStorage.getItem('shiju-asr-mode')==='fast'?'fast':'precise';
+el('asrMode').onchange=()=>localStorage.setItem('shiju-asr-mode',el('asrMode').value);
 async function start(){
  starting=true;draw(j);el('toast').textContent='';
- try{const tab=await selectSource();if(!tab)return;const r=await chrome.runtime.sendMessage({to:'bg',op:'start',tab:tab.id,force:el('force').checked});if(r?.error)throw Error(r.error)}
+ try{const tab=await selectSource();if(!tab)return;const r=await chrome.runtime.sendMessage({to:'bg',op:'start',tab:tab.id,mode:el('asrMode').value,terms:el('asrTerms').value,force:el('force').checked});if(r?.error)throw Error(r.error)}
  catch(e){el('toast').textContent=e.message}finally{starting=false;draw(j)}
 };
 el('start').onclick=start;

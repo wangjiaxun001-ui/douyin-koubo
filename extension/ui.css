@@ -5,3 +5,8 @@
 .flow{display:flex;gap:4px;margin:0 0 18px;border-bottom:1px solid #cdd8cf;padding-bottom:6px}.flow>*{flex:1;text-align:center;color:#345544;background:transparent;font:600 13px/1.5 system-ui;text-decoration:none;padding:7px 3px;border:0;border-radius:6px}.flow [aria-current]{background:#dfebdf}.flow button:hover{background:#e9efdd}#syncMetrics{margin-top:8px}.sync-hint{display:block;margin-top:4px}
 
 #sourceTools select{width:100%;font:inherit;margin-bottom:8px}#openDouyin{color:#215445}
+
+#kakaPanel{margin-bottom:16px}#kakaPanel h2{margin:0 0 6px;font-size:18px}
+#kakaLines{max-height:50vh;overflow:auto}#kakaLines label{display:grid;grid-template-columns:5em 1fr;align-items:start;gap:8px}
+#kakaLines small{font-variant-numeric:tabular-nums;padding-top:6px}#kakaLines textarea{font:inherit;line-height:1.5;resize:vertical;width:100%;min-height:2.6em;padding:5px 8px;border:1px solid #b4c4b9;border-radius:6px}
+#kakaActions{margin-top:9px}

@@ -5,7 +5,16 @@
 <button id="start" class="primary">快速提取当前视频 <span>→</span></button>
 <a id="openDouyin" href="https://www.douyin.com/" target="_blank" rel="noopener" hidden>打开抖音</a>
 <button id="syncMetrics">只更新作品数据</button><small class="sync-hint">已有文案可单独更新粉丝、点赞和评论。</small>
-<details id="options"><summary>提取选项</summary><label><input id="force" type="checkbox"> 忽略网页字幕，按原声重新听写</label></details>
+<details id="options"><summary>提取选项</summary><label>没有原字幕时 <select id="asrMode"><option value="precise">优先原声精校（本机）</option><option value="fast">快速识别</option></select></label><label>精校术语（可选）<input id="asrTerms" maxlength="180" placeholder="例如：尖头靴、Quiet Luxury、Y2K"></label><label><input id="force" type="checkbox"> 忽略网页字幕，按原声重新听写</label></details>
 <section id="job" hidden><div class="meta"><strong id="source"></strong><span id="progress"></span></div><progress id="bar" value="0" max="1"></progress><p id="title"></p><p id="status" role="status"></p><a id="openWork" target="_blank" rel="noopener" hidden>打开这条作品的独立页面 ↗</a><button id="stop" hidden>停止并保留已有文字</button></section>
-<section id="result" hidden><div class="switch"><button id="raw" aria-pressed="true">逐字口播</button><button id="structure" aria-pressed="false">脚本拆解</button></div><pre id="preview"></pre><div class="copies"><button id="copyRaw">复制逐字稿</button><button id="copyScript">复制脚本拆解</button></div><button id="compareJob">把整篇加入文案对比</button><div id="clipTools"><label for="clipRow">选一段口播</label><select id="clipRow"></select><button id="sendClip">加入已有选题卡 →</button><small id="clipHint"></small></div></section>
-<div id="toast" role="status"></div></main><footer>不录屏 · 不保存影音 · 不上传声音</footer><script src="format.js"></script><script src="navigation.js"></script><script src="popup.js"></script></body></html>
+<section id="result" hidden><div class="switch"><button id="raw" aria-pressed="true">逐字口播</button><button id="structure" aria-pressed="false">脚本拆解</button></div><pre id="preview"></pre><div class="copies"><button id="copyRaw">复制逐字稿</button><button id="copyScript">复制脚本拆解</button></div><button id="kakaOpen">卡卡字幕 · 断句校对</button>
+<section id="kakaPanel" hidden aria-label="卡卡字幕">
+<h2>卡卡字幕</h2><p id="kakaStatus" role="status"></p>
+<div id="kakaLines"></div>
+<div id="kakaActions" hidden><div class="copies"><button id="kakaCopy">复制纯文字</button><button id="kakaExport">导出 SRT 字幕</button></div>
+<details><summary>AI 校正错字</summary>
+<label>DeepSeek API Key <input id="kakaKey" type="password" autocomplete="off"></label>
+<label>模型 ID <input id="kakaModel" value="deepseek-flash"></label>
+<button id="kakaCorrect">发送字幕文字给 DeepSeek 校正</button></details></div></section>
+<button id="compareJob">把整篇加入文案对比</button><div id="clipTools"><label for="clipRow">选一段口播</label><select id="clipRow"></select><button id="sendClip">加入已有选题卡 →</button><small id="clipHint"></small></div></section>
+<div id="toast" role="status"></div></main><footer>不录屏 · 不保存影音 · 不上传声音</footer><script src="format.js"></script><script src="navigation.js"></script><script src="kaka.js"></script><script src="popup.js"></script></body></html>
