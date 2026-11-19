@@ -82,6 +82,7 @@ async function tryPrecision(job) {
     await save();
     const length = await readAudio(job);
     guard(job);
+    job.message = '音轨已读取，正在送入本机识别…';await save();
     for (let offset = 0; offset < length;) {
       const part = await page(job,'samples',offset);
       guard(job);
@@ -91,6 +92,7 @@ async function tryPrecision(job) {
       offset += part.count;
     }
     if (!job.forceVoice) {
+      job.message='音轨已就绪，正在读取画面字幕参考…';await save();
       const [reference] = await chrome.scripting.executeScript({target:{tabId:job.tab}, world:'MAIN',
         func:playerAddresses, args:[job.workId || '',true]}).catch(()=>[]);
       const size = await page(job,'videoBytes',reference?.result || []).catch(()=>0);

@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 MODEL = Path(__file__).resolve().parent / 'models' / 'whisper-small'
+MAX_AUDIO_SECONDS = 45 * 60 + 1  # Allow rounding at the browser duration limit.
 END = re.compile(r'[。！？!?；;…][”’」』）)]*$')
 PAUSE = re.compile(r'[，、,:：][”’」』）)]*$')
 
@@ -57,7 +58,7 @@ def transcribe_stream(read, send, terms):
         if msg.get('op') != 'audio':
             raise ValueError('无法读取音轨。')
         chunk = base64.b64decode(msg['pcm'], validate=True)
-        if len(chunk) % 2 or not 0 < len(chunk) <= 128000 or len(pcm) + len(chunk) > 16000 * 2 * 1201:
+        if len(chunk) % 2 or not 0 < len(chunk) <= 128000 or len(pcm) + len(chunk) > 16000 * 2 * MAX_AUDIO_SECONDS:
             raise ValueError('音轨长度异常。')
         pcm.extend(chunk)
         send({'received': True})

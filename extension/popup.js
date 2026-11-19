@@ -12,9 +12,12 @@ const el=id=>document.getElementById(id);let j,mode='raw',starting=false;
 function draw(x){
  syncKakaJob(x?.token);
  j=x;const busy=['probe','loading','listening','fast','finishing'].includes(x?.phase);
+ const another=busy && workTab && workTab!=='none' && String(x.tab)!==workTab;
+ el('start').firstChild.textContent=starting?'正在连接视频… ':another?'另一条视频正在提取 ':busy?'正在提取，请稍候 ':workTab==='none'?'连接视频并提取 ':'快速提取当前视频 ';
  el('start').disabled=busy||starting;el('options').hidden=busy;el('job').hidden=!x;el('result').hidden=busy||!x?.rows.length;if(!x)return;
- el('source').textContent=x.source||'读取作品';el('title').textContent=x.title;el('status').textContent=x.message;
- el('progress').textContent=x.duration?timeTag(x.time)+' / '+timeTag(x.duration):'';el('bar').value=x.duration?x.time/x.duration:0;
+ el('source').textContent=x.source||'读取作品';el('title').textContent=x.title;el('status').textContent=(another?'正在处理另一条作品，完成后可提取当前视频。 ':'')+x.message;
+ el('progress').textContent=x.duration?timeTag(x.time)+' / '+timeTag(x.duration):'';if(busy && ['probe','loading','finishing'].includes(x.phase))el('bar').removeAttribute('value');
+ else el('bar').value=x.duration?x.time/x.duration:0;
  const link=el('openWork');
  link.hidden=!['error','partial','unavailable'].includes(x.phase)||busy||!/^\d{10,22}$/.test(x.workId||'');
  if(!link.hidden)link.href='https://www.douyin.com/video/'+x.workId;

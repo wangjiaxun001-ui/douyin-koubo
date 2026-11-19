@@ -103,7 +103,9 @@ globalThis.__shiju=async(op,token,force)=>{
   return {size:bytes.length,data:btoa(data)};
  }
  if(op==='readTrack'){
-  x.audio=await globalThis.__shijuReadTrack(v,await x.workItems(),x.controller.signal,force);
+  x.audio=await globalThis.__shijuReadTrack(v,await x.workItems(),x.controller.signal,force,progress=>{
+   chrome.runtime.sendMessage({to:'bg',op:'audioProgress',token:x.token,...progress}).catch(()=>{});
+  });
   if(j!==x || key()!==x.id || v.currentSrc!==x.src)throw Error('作品已切换');
   return x.audio.length;
  }

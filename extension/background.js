@@ -12,8 +12,8 @@ const running=j=>j&&['probe','loading','fast','finishing'].includes(j.phase);
 const valid=url=>{try{const u=new URL(url);return u.protocol==='https:'&&/(^|\.)(douyin\.com|iesdouyin\.com)$/.test(u.hostname)}catch{return false}};
 function save(){const snapshot=structuredClone(state);writes=writes.catch(()=>{}).then(()=>chrome.storage.session.set({job:snapshot}));return writes}
 const page=async(j,op,force=false)=>{
- const [r]=await chrome.scripting.executeScript({target:{tabId:j.tab},func:async(a,b,c)=>{try{return {value:await globalThis.__shiju(a,b,c)}}catch(e){return {error:e.message}}},args:[op,j.token,force]});
- if(!r?.result||r.result.error)throw Error(r?.result?.error||'无法连接播放器');
+ const [r]=await chrome.scripting.executeScript({target:{tabId:j.tab},func:async(a,b,c)=>{try{return {value:await globalThis.__shiju(a,b,c)}}catch(e){return {error:e.message,code:e.code}}},args:[op,j.token,force]});
+ if(!r?.result||r.result.error)throw Object.assign(Error(r?.result?.error||'无法连接播放器'),{code:r?.result?.code});
  return r.result.value
 };
 async function off(j,op,extra={}){const r=await chrome.runtime.sendMessage({to:'off',op,token:j.token,...extra});if(!r||r.error)throw Error(r?.error||'声音处理器未响应');return r}
@@ -37,7 +37,7 @@ function playerAddresses(id, videoOnly){
     const item=f.memoizedProps?.awemeInfo;
     if(String(item?.awemeId)!==id||!item.video)continue;
     const m=item.video;
-    const add=(list,size)=>{if(!(size>(videoOnly?112:48)*1024*1024)&&Array.isArray(list))for(const x of list){const src=typeof x==='string'?x:x?.src;if(typeof src==='string'&&src.length<16384&&!urls.includes(src))urls.push(src)}};
+    const add=(list,size)=>{if(Array.isArray(list))for(const x of list){const src=typeof x==='string'?x:x?.src;if(typeof src==='string'&&src.length<16384&&!urls.includes(src))urls.push(src)}};
     if(!videoOnly && Array.isArray(m.bitRateAudioList))for(const audio of m.bitRateAudioList)add(audio.urlList,audio.size);
     add(m.playAddr,m.playAddrSize);
     if(urls.length)return urls.slice(0,8);
@@ -46,10 +46,57 @@ function playerAddresses(id, videoOnly){
  }
  return urls;
 }
-async function readAudio(j){
+function workIdFromUrl(value){
+ try{const u=new URL(value);return u.searchParams.get('modal_id')||u.pathname.match(/\/video\/(\d+)/)?.[1]||''}catch{return ''}
+}
+// Search overlays can expose only a blob URL. The same work's standalone page
+// exposes its complete media source. Recover in the user-authorized tab once;
+// never infer the work from nearby players or resource history.
+async function openIndependentWork(j){
+ guard(j);
+ const current=await chrome.tabs.get(j.tab);
+ guard(j);
+ if(!/^\d+$/.test(j.workId||'')||!valid(current.url)||workIdFromUrl(current.url)!==j.workId)throw Error('作品已切换，请重新提取。');
+ const url=new URL(current.url);
+ if(url.pathname==='/video/'+j.workId&&!url.searchParams.has('modal_id'))return false;
+ // Keep the same origin, so this uses the existing activeTab grant.
+ const target=url.origin+'/video/'+j.workId;
+ j.recoveryUrl=target;
+ j.message='搜索弹窗未提供完整音轨，正在打开这条作品的独立页面继续提取…';await save();
+ try{
+  await chrome.tabs.update(j.tab,{url:target});
+  let loaded=false;
+  const deadline=Date.now()+25000;
+  while(Date.now()<deadline){
+   guard(j);
+   const tab=await chrome.tabs.get(j.tab);
+   if(tab.url!==target&&tab.pendingUrl!==target)throw Error('作品已切换，请重新提取。');
+   if(tab.url===target&&tab.status==='complete'){loaded=true;break}
+   await new Promise(resolve=>setTimeout(resolve,200));
+  }
+  guard(j);
+  if(!loaded)throw Error('独立作品页加载超时。请等待视频出现后再点提取。');
+  await chrome.scripting.executeScript({target:{tabId:j.tab},files:['metrics.js','fast.js','page.js']});
+  guard(j);
+  const p=await page(j,'probe',{skip:true});
+  guard(j);
+  if(p.workId!==j.workId||Math.abs(p.duration-j.duration)>1)throw Error('独立页面的作品或时长不一致，已停止提取。');
+  j.duration=p.duration;
+  j.message='已打开同一条作品，正在读取完整音轨…';await save();
+  return true;
+ }finally{delete j.recoveryUrl}
+}
+async function readAudioOnce(j){
  const [result]=await chrome.scripting.executeScript({target:{tabId:j.tab},world:'MAIN',func:playerAddresses,args:[j.workId||'']}).catch(()=>[]);
  guard(j);
  return page(j,'readTrack',result?.result||[]);
+}
+async function readAudio(j){
+ try{return await readAudioOnce(j)}catch(error){
+  guard(j);
+  if(error.code!=='NO_MEDIA_URL'||!await openIndependentWork(j))throw error;
+  return readAudioOnce(j);
+ }
 }
 async function fastTranscribe(j){
  const [length]=await Promise.all([readAudio(j),off(j,'fastBoot')]);
@@ -133,6 +180,11 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
  (async()=>{
   await init;
   const j=state;if(!j||j.token!==m.token)return;
+  if(m.op==='audioProgress' && s.tab?.id===j.tab && j.phase==='loading'){
+   const mb=Number.isFinite(m.bytes)?Math.max(0,m.bytes)/1024/1024:0;
+   j.message=m.stage==='decode'?'完整媒体已读取，正在解码音轨…':'正在读取完整音轨… '+mb.toFixed(1)+' MB';
+   await save();return;
+  }
   if(m.op==='workMetrics'&&s.tab?.id===j.tab&&/^\d+$/.test(m.workId)&&(!j.workId||j.workId===m.workId)){
    j.metrics=m.values;j.metricsAt=Date.now();j.workId=m.workId;await save();return;
   }
@@ -141,4 +193,10 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
  })().then(()=>reply({ok:true}),e=>reply({error:e.message}));return true
 });
 chrome.tabs.onRemoved.addListener(async id=>{await init;if(state?.tab===id)await stop(state,'视频标签页已关闭')});
-chrome.tabs.onUpdated.addListener(async(id,c)=>{await init;if(state?.tab===id&&c.status==='loading')await stop(state,'视频页面已刷新或跳转')});
+chrome.tabs.onUpdated.addListener(async(id,c,tab)=>{
+ await init;
+ if(state?.tab!==id)return;
+ const target=state.recoveryUrl;
+ if(target&&(tab?.url===target||tab?.pendingUrl===target)&&(!c.url||c.url===target))return;
+ if(c.status==='loading'||(target&&c.url))await stop(state,'视频页面已刷新或跳转');
+});
