@@ -117,6 +117,15 @@ async function tryPrecision(job) {
       job.rows = reply.captions;
       job.source = '画面字幕';
     }
+    job.captionNote = reply.captions?.length
+      ? '已读取视频画面中的字幕。人名、品牌名仍建议对照原片核对。'
+      : job.forceVoice
+        ? '你选择了按原声听写，本次未读取网页和画面字幕。听写文字可能与原字幕不同。'
+        : reply.pictureStatus === 'incomplete'
+          ? '画面字幕未能完整读出，本次保留原声听写结果。人名、品牌名可能听错。'
+          : reply.pictureStatus === 'error'
+            ? '画面字幕核对失败，本次保留原声听写结果。文字尚未与原字幕核实。'
+            : '本次未取得可核对的画面字幕，结果来自原声听写，可能与视频字幕不同。';
     job.time = job.duration;
     await end(job,job.rows.length?'done':'empty',job.rows.length?(reply.captions?.length?'已按画面字幕的换行与出现时间提取。':'已按原声精校并断句。'):'整条音轨未识别到清晰人声。');
     return true;

@@ -36,6 +36,14 @@ winner = representative({'votes':variants,'s':1,'e':3},lambda t:'先看裤子的
 assert winner == '先看裤子的版型'
 print('PASS animated prefixes do not replace the complete subtitle')
 
+# Short brand names are especially vulnerable to a homophone in the audio.
+# Two matching frames must not lose to one OCR glitch just because ASR agrees
+# with that glitch. These cases failed with the previous audio-weighted score.
+for correct, wrong in [('始祖鸟','始祖乌'), ('巴塔哥尼亚','巴塔哥尼雅'), ('羊毛衫','杨毛衫')]:
+    run = {'votes':Counter({correct:2,wrong:1}),'s':0,'e':1}
+    assert representative(run,lambda t:wrong) == correct
+print('PASS repeated original captions take priority over ASR homophones')
+
 from screen_captions import clean_display
 flicker = [dict(s=0,e=1,t='鞋底厚得像踩砖头'),dict(s=1.3,e=2,t='鞋底厚得像踩砖头'),
            dict(s=2.1,e=3,t='4K GOFPS视觉上把脚拉成一条线')]

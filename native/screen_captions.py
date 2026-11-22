@@ -93,6 +93,15 @@ def representative(run, nearby):
     # Among similar complete readings, use evidence from the audio and votes.
     longest = max(len(normalize(t)) for t in votes)
     candidates = [t for t in votes if len(normalize(t)) >= longest*.75]
+    # Repeated visual evidence beats a conflicting homophone from ASR.
+    # Ignore animated prefixes when counting full-line readings. Audio only
+    # breaks ties when the frames do not provide a clear majority.
+    counts = Counter()
+    for text in candidates:
+        counts[normalize(text)] += votes[text]
+    winner, count = counts.most_common(1)[0]
+    if count >= 2 and count > sum(counts.values()) / 2:
+        return max((text for text in candidates if normalize(text) == winner), key=votes.get)
     heard = nearby((run['s']+run['e'])/2)
     def rank(text):
         n = normalize(text)

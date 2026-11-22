@@ -74,16 +74,21 @@ def transcribe_stream(read, send, terms):
             speech.extend(rows)
             send({'rows':rows})
     captions = None
+    picture_status = 'unavailable'
     if video and speech:
+        picture_status = 'incomplete'
         send({'checkingPicture':True})
         try:
             from screen_captions import original_rows
             vocabulary = [t.strip() for t in re.split('[、,，;；\n]+',terms) if t.strip()]
             captions = original_rows(video,speech,len(audio)/16000,convert,
                                      lambda t:send({'checkingPicture':True, 'pictureTime':t}),vocabulary)
+            if captions:
+                picture_status = 'matched'
         except (BrokenPipeError, EOFError):
             raise
         except Exception as error:
+            picture_status = 'error'
             import sys
             print('Picture subtitles unavailable:', type(error).__name__, file=sys.stderr)
-    send({'done':True, 'captions':captions})
+    send({'done':True, 'captions':captions, 'pictureStatus':picture_status})

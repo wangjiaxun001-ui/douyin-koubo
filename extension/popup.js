@@ -15,7 +15,10 @@ function draw(x){
  const another=busy && workTab && workTab!=='none' && String(x.tab)!==workTab;
  el('start').firstChild.textContent=starting?'正在连接视频… ':another?'另一条视频正在提取 ':busy?'正在提取，请稍候 ':workTab==='none'?'连接视频并提取 ':'快速提取当前视频 ';
  el('start').disabled=busy||starting;el('options').hidden=busy;el('job').hidden=!x;el('result').hidden=busy||!x?.rows.length;if(!x)return;
+ el('retry').disabled=busy||starting;
  el('source').textContent=x.source||'读取作品';el('title').textContent=x.title;el('status').textContent=(another?'正在处理另一条作品，完成后可提取当前视频。 ':'')+x.message;
+ el('captionNote').textContent=x.captionNote||'';
+ el('captionNote').hidden=busy||!x.captionNote;
  el('progress').textContent=x.duration?timeTag(x.time)+' / '+timeTag(x.duration):'';if(busy && ['probe','loading','finishing'].includes(x.phase))el('bar').removeAttribute('value');
  else el('bar').value=x.duration?x.time/x.duration:0;
  const link=el('openWork');
@@ -36,12 +39,18 @@ chrome.storage.onChanged.addListener((c,area)=>{if(area==='session'&&c.job)draw(
 chrome.storage.session.get('job').then(x=>draw(x.job));
 el('asrMode').value=localStorage.getItem('shiju-asr-mode')==='fast'?'fast':'precise';
 el('asrMode').onchange=()=>localStorage.setItem('shiju-asr-mode',el('asrMode').value);
-async function start(){
+async function start(fresh=false){
  starting=true;draw(j);el('toast').textContent='';
- try{const tab=await selectSource();if(!tab)return;const r=await chrome.runtime.sendMessage({to:'bg',op:'start',tab:tab.id,mode:el('asrMode').value,terms:el('asrTerms').value,force:el('force').checked});if(r?.error)throw Error(r.error)}
+ try{
+  // Request from the button gesture, before any tab lookup loses that gesture.
+  // A denial still permits the built-in fast recognizer, labelled in the result.
+  if(el('asrMode').value==='precise')await chrome.permissions.request({permissions:['nativeMessaging']});
+  const tab=await selectSource();if(!tab)return;const r=await chrome.runtime.sendMessage({to:'bg',op:'start',tab:tab.id,mode:el('asrMode').value,terms:el('asrTerms').value,force:el('force').checked,fresh});if(r?.error)throw Error(r.error)
+ }
  catch(e){el('toast').textContent=e.message}finally{starting=false;draw(j)}
 };
-el('start').onclick=start;
+el('start').onclick=()=>start();
+el('retry').onclick=()=>start(true);
 el('stop').onclick=()=>chrome.runtime.sendMessage({to:'bg',op:'stop',token:j.token});
 el('raw').onclick=()=>{mode='raw';draw(j)};el('structure').onclick=()=>{mode='structure';draw(j)};
 for(const [id,fn] of [['copyRaw',transcript],['copyScript',scriptText]])el(id).onclick=async()=>{try{await navigator.clipboard.writeText(fn(j));el('toast').textContent=id==='copyRaw'?'逐字稿已复制':'脚本拆解已复制'}catch{el('toast').textContent='复制失败，请选中预览文字复制'}};

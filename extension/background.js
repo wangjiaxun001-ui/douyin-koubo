@@ -129,9 +129,10 @@ async function fastTranscribe(j){
  const result=j.rows.length
   ? (j.mode==='precise'?'本机精校未就绪，已使用快速识别。':'')+'整条音轨已转写。首段 '+secondsSinceStart(j.firstAt)+' 秒，整篇 '+secondsSinceStart(Date.now())+' 秒。'
   : '整条音轨未识别到清晰人声。';
+ j.captionNote=(j.mode==='precise'?'本机精校未连接，已改用快速识别。':'')+'当前文字来自音频听写，未与视频画面字幕核实，人名和品牌名可能听错。';
  await end(j,j.rows.length?'done':'empty',result);
 }
-async function start(tab,force,mode,terms,accepted){
+async function start(tab,force,mode,terms,accepted,fresh=false){
  if(running(state))throw Error('已有视频正在处理');
  const t=await chrome.tabs.get(tab);
  if(!valid(t.url))throw Error('请在 Chrome 中打开抖音分享链接，等作品页面出现后再点提取。');
@@ -141,13 +142,13 @@ async function start(tab,force,mode,terms,accepted){
  const previous=state;
  const matchingMode=!previous?.forceVoice && previous?.mode===mode && (previous.terms||'')===terms &&
    (!hasNative||['原声精校','画面字幕'].includes(previous.source));
- const reuse=!force&&previous?.phase==='done'&&(previous.source==='网页字幕'||matchingMode)&&previous.workId&&previous.rows?.some(r=>r.t&&r.t!=='〔此处未识别清楚〕');
+ const reuse=!fresh&&!force&&previous?.phase==='done'&&(previous.source==='网页字幕'||matchingMode)&&previous.workId&&previous.rows?.some(r=>r.t&&r.t!=='〔此处未识别清楚〕');
  const j=state={token:crypto.randomUUID(),startedAt:Date.now(),tab,mode,terms,forceVoice:force,phase:'probe',message:'正在读取这条视频的字幕…',title:t.title||'抖音作品',duration:0,time:0,rows:[],source:''};await save();accepted();
  try{
   await chrome.scripting.executeScript({target:{tabId:tab},files:['metrics.js','fast.js','page.js']});guard(j);
   const p=await page(j,'probe',{skip:force,previousCaptions:previous?.source==='网页字幕',previousId:reuse?previous.workId:null,previousDuration:reuse?previous.duration:0});guard(j);Object.assign(j,{title:p.title,duration:p.duration,workId:p.workId});
   if(reuse&&p.reuse&&!p.rows.length){
-   Object.assign(j,{rows:previous.rows,source:previous.source,time:p.duration});
+   Object.assign(j,{rows:previous.rows,source:previous.source,time:p.duration,captionNote:previous.captionNote||'这是上次的提取结果。发现错字可点「重新提取」，重新读取本条作品。'});
    if(!j.metricsAt)Object.assign(j,{metrics:previous.metrics,metricsAt:previous.metricsAt});
    await end(j,'done','已读取这条作品上次完成的逐字稿。');return
   }
@@ -174,7 +175,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   let acknowledged=false;
   init.then(()=>start(m.tab,!!m.force,m.mode==='fast'?'fast':'precise',String(m.terms||'').trim().slice(0,180),()=>{
    acknowledged=true;reply({ok:true});
-  })).catch(error=>{if(!acknowledged)reply({error:error.message})});
+  },!!m.fresh)).catch(error=>{if(!acknowledged)reply({error:error.message})});
   return true;
  }
  (async()=>{
