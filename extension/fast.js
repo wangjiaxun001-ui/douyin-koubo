@@ -87,29 +87,37 @@ globalThis.__shijuReadTrack = async function (video, items, signal, playerUrls, 
   throw Error('未能读取完整音轨：'+[...failures].join('；')+'。可以打开下方的独立作品页后重试。');
 };
 
-globalThis.__shijuVideoBytes = async function(video, items, urls, signal) {
-  const limit = 112 * 1024 * 1024;
-  const candidates = [...urls, ...items.flatMap(item => item.video?.play_addr?.url_list || []), video.currentSrc];
-  const deadline = AbortSignal.timeout(16000);
-  for (const value of [...new Set(candidates)].slice(0,6)) {
+globalThis.__shijuVideoBytes = async function(video, items, urls, signal, progress=()=>{}) {
+  const limit = 512 * 1024 * 1024;
+  if(video.duration>45*60)throw Error('画面字幕支持 45 分钟以内的视频。');
+  const allowed=value=>{try{const u=new URL(value);return u.protocol==='https:'&&(u.origin===location.origin||/(^|\.)douyinvod\.com$/.test(u.hostname)||/^v\d+(?:-[a-z0-9]+)*\.ixigua\.com$/.test(u.hostname))}catch{return false}};
+  const candidates = [...new Set([...urls, ...items.flatMap(item => item.video?.play_addr?.url_list || []), video.currentSrc].filter(allowed))].slice(0,6);
+  if(!candidates.length)throw Object.assign(Error('没有找到完整视频画面地址，未改用语音听写。'),{code:'NO_MEDIA_URL'});
+  const deadline = AbortSignal.timeout(8*60*1000),failures=new Set();
+  for (const value of candidates) {
+    if(deadline.aborted)break;
+    const request=new AbortController();
     try {
-      const url = new URL(value);
-      if (url.protocol !== 'https:' || !(url.origin === location.origin || /(^|\.)douyinvod\.com$/.test(url.hostname))) continue;
-      const r = await fetch(url,{signal:AbortSignal.any([signal,deadline]),credentials:'omit'});
-      if (!r.ok || !r.body || Number(r.headers.get('content-length')) > limit) {await r.body?.cancel(); continue;}
+      progress({stage:'picture',bytes:0});
+      const r = await fetch(value,{signal:AbortSignal.any([signal,deadline,request.signal,AbortSignal.timeout(5*60*1000)]),credentials:'omit'});
+      if (!r.ok || !r.body) {failures.add('视频地址读取失败');await r.body?.cancel();continue;}
+      if(Number(r.headers.get('content-length'))>limit){failures.add('视频超过 512 MiB');await r.body.cancel();continue;}
       const reader = r.body.getReader(), chunks = [];
-      let size = 0;
+      let size = 0,reportedAt=0;
       for (;;) {
         const {done,value} = await reader.read();
         if (done) break;
         size += value.length;
-        if (size > limit) { await reader.cancel(); break; }
+        if (size > limit) {failures.add('视频超过 512 MiB');await reader.cancel();break;}
         chunks.push(value);
+        if(Date.now()-reportedAt>=500){progress({stage:'picture',bytes:size});reportedAt=Date.now();}
       }
       if (size && size <= limit) return new Blob(chunks);
-    } catch {signal.throwIfAborted(); if(deadline.aborted)break;}
+    } catch(error) {
+      signal.throwIfAborted();failures.add(error.name==='TimeoutError'?'视频读取超时':'视频下载中断');
+    } finally {request.abort();}
   }
-  return null;
+  throw Error('未能读取完整视频画面：'+[...failures].join('；')+'。本次没有改用语音听写。');
 };
 
 globalThis.__shijuSamples = function (buffer, offset) {

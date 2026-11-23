@@ -31,7 +31,7 @@ function reader({size = 64, status = 200, duration = 868.696, decode} = {}) {
     }
   });
   vm.runInContext(source, context);
-  return {read: context.__shijuReadTrack, timeouts, counts: () => ({requests, cancellations})};
+  return {picture:context.__shijuVideoBytes, read: context.__shijuReadTrack, timeouts, counts: () => ({requests, cancellations})};
 }
 const video = {duration: 868.696, currentSrc: 'blob:https://www.douyin.com/player'};
 test('a 14-minute work can read a 179 MiB media file and reports download/decode stages', async () => {
@@ -79,9 +79,9 @@ test('the extraction button explains a job in another tab and recovers after fai
     return elements.get(id);
   };
   const popup = fs.readFileSync(path.join(__dirname, '../extension/popup.js'), 'utf8');
-  const draw = popup.slice(popup.indexOf('function draw('), popup.indexOf('chrome.storage.onChanged'));
+  const draw = popup.slice(popup.indexOf('function draw('), popup.indexOf('function renderTranscriptEditor'));
   const context = vm.createContext({
-    el:element, workTab:'1', starting:false, mode:'raw', j:null,
+    el:element, workTab:'1', starting:false, mode:'raw', j:null, editDraft:null, renderTranscriptEditor(){},
     syncKakaJob(){}, timeTag: String, transcript(){return '';}, scriptText(){return '';}
   });
   vm.runInContext(draw,context);
@@ -98,4 +98,14 @@ test('the extraction button explains a job in another tab and recovers after fai
   context.starting=true;
   context.draw(null);
   assert.match(element('start').firstChild.textContent,/正在连接视频/);
+});
+
+test('picture extraction reads bounded video with progress and never decodes audio', async()=>{
+  const r=reader({size:179,decode:()=>{throw Error('must not decode audio');}}), stages=[];
+  const bytes=await r.picture(video,[],[media],new AbortController().signal,p=>stages.push(p.stage));
+  assert.equal(bytes.size,16);assert.ok(stages.every(x=>x==='picture'));
+  assert.equal((await r.picture(video,[],['https://v9-dy.ixigua.com/video'],new AbortController().signal)).size,16);
+  assert.ok(r.timeouts.includes(480000));assert.ok(r.timeouts.includes(300000));
+  await assert.rejects(reader({size:513}).picture(video,[],[media],new AbortController().signal),/512 MiB/);
+  await assert.rejects(reader().picture(video,[],[],new AbortController().signal),e=>e.code==='NO_MEDIA_URL');
 });

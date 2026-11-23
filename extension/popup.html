@@ -2,12 +2,12 @@
 <header><i>拾</i><div><strong>拾句</strong><small> 抖音口播提词器</small></div><b>本地处理</b></header>
 <main><nav class="flow" aria-label="拾句工作流程"><a href="#extract" aria-current="step">1 提取口播</a><button id="openCompare">2 对比挑段</button><button id="openFinal">3 查看成稿</button></nav><h1 id="extract">把口播变成文字。</h1><p id="lead">打开一条抖音作品，点下方按钮。视频可以暂停。拾句直接读取字幕或完整音轨，提取完成后显示全文。</p>
 <div id="sourceTools" hidden><label for="sourceTabs">选择抖音标签页</label><select id="sourceTabs"></select></div>
-<button id="start" class="primary">快速提取当前视频 <span>→</span></button>
+<button id="start" class="primary">提取当前视频 <span>→</span></button>
 <a id="openDouyin" href="https://www.douyin.com/" target="_blank" rel="noopener" hidden>打开抖音</a>
 <button id="syncMetrics">只更新作品数据</button><small class="sync-hint">已有文案可单独更新粉丝、点赞和评论。</small>
-<details id="options"><summary>提取选项</summary><label>没有原字幕时 <select id="asrMode"><option value="precise">优先原声精校（本机）</option><option value="fast">快速识别</option></select></label><label>精校术语（可选）<input id="asrTerms" maxlength="180" placeholder="例如：尖头靴、Quiet Luxury、Y2K"></label><label><input id="force" type="checkbox"> 忽略网页和画面字幕，只按原声听写</label></details>
+<details id="options"><summary>提取选项</summary><label>提取方式 <select id="asrMode"><option value="picture">提取画面原字幕（推荐）</option><option value="precise">按原声听写（本机精校）</option><option value="fast">按原声听写（快速）</option></select></label><label>听写术语（可选）<input id="asrTerms" maxlength="180" placeholder="例如：尖头靴、Quiet Luxury、Y2K"></label><label><input id="force" type="checkbox"> 忽略网页和画面字幕，只按原声听写</label></details>
 <section id="job" hidden><div class="meta"><strong id="source"></strong><span id="progress"></span></div><progress id="bar" value="0" max="1"></progress><p id="title"></p><p id="status" role="status"></p><a id="openWork" target="_blank" rel="noopener" hidden>打开这条作品的独立页面 ↗</a><button id="stop" hidden>停止并保留已有文字</button></section>
-<section id="result" hidden><div class="switch"><button id="raw" aria-pressed="true">逐字口播</button><button id="structure" aria-pressed="false">脚本拆解</button></div><p id="captionNote" role="status" hidden></p><pre id="preview"></pre><div class="copies"><button id="copyRaw">复制逐字稿</button><button id="copyScript">复制脚本拆解</button></div><button id="retry">重新提取（不使用上次结果）</button><button id="kakaOpen">卡卡字幕 · 断句校对</button>
+<section id="result" hidden><div class="switch"><button id="raw" aria-pressed="true">逐字口播</button><button id="structure" aria-pressed="false">脚本拆解</button></div><p id="captionNote" role="status" hidden></p><div id="transcriptField"><label for="transcriptEditor">逐字口播 · 可直接编辑</label><textarea id="transcriptEditor" maxlength="200000" spellcheck="false" aria-describedby="editStatus"></textarea><small id="editStatus" role="status">修改后自动暂存</small></div><pre id="preview" hidden></pre><div class="copies"><button id="copyRaw">复制逐字稿</button><button id="copyScript">复制脚本拆解</button></div><button id="retry">重新提取（不使用上次结果）</button><button id="kakaOpen">卡卡字幕 · 断句校对</button>
 <section id="kakaPanel" hidden aria-label="卡卡字幕">
 <h2>卡卡字幕</h2><p id="kakaStatus" role="status"></p>
 <div id="kakaLines"></div>

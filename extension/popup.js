@@ -8,12 +8,16 @@ if(!workTab){
   window.close()
  }).catch(()=>{}); // Keep the ordinary popup available when a window cannot open.
 }
-const el=id=>document.getElementById(id);let j,mode='raw',starting=false;
+const el=id=>document.getElementById(id);let j,mode='raw',starting=false,editDraft=null;
 function draw(x){
+ // Storage notifications can arrive while the user is typing. Never replace
+ // newer local text with an older save, or move the cursor on progress updates.
+ if(x&&j?.token===x.token&&(j.editRevision||0)>(x.editRevision||0))x={...x,editedText:j.editedText,editRevision:j.editRevision};
+ if(x&&editDraft?.token===x.token)x={...x,editedText:editDraft.text};
  syncKakaJob(x?.token);
  j=x;const busy=['probe','loading','listening','fast','finishing'].includes(x?.phase);
  const another=busy && workTab && workTab!=='none' && String(x.tab)!==workTab;
- el('start').firstChild.textContent=starting?'正在连接视频… ':another?'另一条视频正在提取 ':busy?'正在提取，请稍候 ':workTab==='none'?'连接视频并提取 ':'快速提取当前视频 ';
+ el('start').firstChild.textContent=starting?'正在连接视频… ':another?'另一条视频正在提取 ':busy?'正在提取，请稍候 ':workTab==='none'?'连接视频并提取 ':'提取当前视频 ';
  el('start').disabled=busy||starting;el('options').hidden=busy;el('job').hidden=!x;el('result').hidden=busy||!x?.rows.length;if(!x)return;
  el('retry').disabled=busy||starting;
  el('source').textContent=x.source||'读取作品';el('title').textContent=x.title;el('status').textContent=(another?'正在处理另一条作品，完成后可提取当前视频。 ':'')+x.message;
@@ -24,7 +28,7 @@ function draw(x){
  const link=el('openWork');
  link.hidden=!['error','partial','unavailable'].includes(x.phase)||busy||!/^\d{10,22}$/.test(x.workId||'');
  if(!link.hidden)link.href='https://www.douyin.com/video/'+x.workId;
- el('stop').hidden=!busy||x.phase==='finishing';el('preview').textContent=!busy&&x.rows.length?(mode==='raw'?transcript(x):scriptText(x)):'';
+ el('stop').hidden=!busy||x.phase==='finishing';renderTranscriptEditor(x,busy);el('preview').textContent=!busy&&x.rows.length?(mode==='raw'?transcript(x):scriptText(x)):'';
  const sel=el('clipRow'),rows=x.rows;
  if(sel.dataset.job!==x.token||sel.dataset.source!==x.source||sel.options.length>rows.length){
   sel.replaceChildren();sel.dataset.job=x.token;sel.dataset.source=x.source;
@@ -32,19 +36,51 @@ function draw(x){
  // Incoming progress must not collapse an open selector or reset the chosen sentence.
  for(let i=sel.options.length;i<rows.length;i++)sel.add(new Option(timeTag(rows[i].s)+'　'+rows[i].t,String(i)));
  el('sendClip').disabled=!/^\d{10,22}$/.test(x.workId||'')||!rows.length;
- el('clipHint').textContent=el('sendClip').disabled?'需要带来源的逐字稿，请在单条作品页重新提取。':'确认后只存原话和时间，不存视频。';
+ el('clipHint').textContent=el('sendClip').disabled?'需要带来源的逐字稿，请在单条作品页重新提取。':typeof x.editedText==='string'?'此处保留原始片段和时间。整篇修改稿可通过上方按钮加入文案对比。':'确认后只存原话和时间，不存视频。';
  el('raw').setAttribute('aria-pressed',mode==='raw');el('structure').setAttribute('aria-pressed',mode!=='raw')
 }
+function renderTranscriptEditor(job,busy){
+ const raw=mode==='raw';
+ el('transcriptField').hidden=busy||!raw;el('preview').hidden=raw;
+ el('transcriptEditor').disabled=busy;
+ const text=transcriptBody(job);
+ if(el('transcriptEditor').value!==text)el('transcriptEditor').value=text;
+ if(editDraft?.token!==job.token)el('editStatus').textContent=typeof job.editedText==='string'?'修改已自动暂存；复制和文案对比使用修改稿。':'可以直接改字、增删段落，修改后自动暂存。';
+ el('kakaOpen').textContent=typeof job.editedText==='string'?'卡卡字幕 · 原始分句校对':'卡卡字幕 · 断句校对';
+}
+async function persistTranscript(token,text){
+ const answer=await chrome.runtime.sendMessage({to:'bg',op:'editTranscript',token,text});
+ if(!answer?.ok)throw Error(answer?.error||'修改未保存，请先复制保留。');
+ return answer;
+}
+el('transcriptEditor').oninput=()=>{
+ if(!j)return;
+ const draft={token:j.token,text:el('transcriptEditor').value};
+ editDraft=draft;j={...j,editedText:draft.text};
+ el('editStatus').textContent='正在保存…';
+ // Send immediately so closing this page does not lose a debounced last edit.
+ persistTranscript(draft.token,draft.text).then(answer=>{
+  if(editDraft!==draft||j?.token!==draft.token)return;
+  j.editRevision=Math.max(j.editRevision||0,answer.revision||0);editDraft=null;
+  el('editStatus').textContent='修改已自动暂存；复制和文案对比使用修改稿。';
+ }).catch(error=>{if(editDraft===draft)el('editStatus').textContent=error.message});
+};
 chrome.storage.onChanged.addListener((c,area)=>{if(area==='session'&&c.job)draw(c.job.newValue)});
 chrome.storage.session.get('job').then(x=>draw(x.job));
-el('asrMode').value=localStorage.getItem('shiju-asr-mode')==='fast'?'fast':'precise';
-el('asrMode').onchange=()=>localStorage.setItem('shiju-asr-mode',el('asrMode').value);
+el('asrMode').value=['fast','precise'].includes(localStorage.getItem('shiju-extraction-mode-v2'))?localStorage.getItem('shiju-extraction-mode-v2'):'picture';
+function updateExtractionMode(){
+ const picture=el('asrMode').value==='picture';
+ el('force').disabled=picture;el('asrTerms').disabled=picture;
+ if(picture)el('force').checked=false;
+}
+updateExtractionMode();
+el('asrMode').onchange=()=>{localStorage.setItem('shiju-extraction-mode-v2',el('asrMode').value);updateExtractionMode();};
 async function start(fresh=false){
  starting=true;draw(j);el('toast').textContent='';
  try{
   // Request from the button gesture, before any tab lookup loses that gesture.
-  // A denial still permits the built-in fast recognizer, labelled in the result.
-  if(el('asrMode').value==='precise')await chrome.permissions.request({permissions:['nativeMessaging']});
+  // Picture mode stops on denial; it never falls back to the speech recognizer.
+  if(el('asrMode').value!=='fast')await chrome.permissions.request({permissions:['nativeMessaging']});
   const tab=await selectSource();if(!tab)return;const r=await chrome.runtime.sendMessage({to:'bg',op:'start',tab:tab.id,mode:el('asrMode').value,terms:el('asrTerms').value,force:el('force').checked,fresh});if(r?.error)throw Error(r.error)
  }
  catch(e){el('toast').textContent=e.message}finally{starting=false;draw(j)}
@@ -79,7 +115,15 @@ async function openComparison(fragment) {
 }
 el('openCompare').onclick=()=>openComparison('step=compare');
 el('openFinal').onclick=()=>openComparison('step=final');
-el('compareJob').onclick=()=>{if(j?.rows.length)openComparison('job='+encodeURIComponent(j.token))};
+el('compareJob').onclick=async()=>{
+ if(!j?.rows.length)return;
+ if(!transcriptBody(j).trim()){el('toast').textContent='请先填写逐字口播内容。';return}
+ const token=j.token;
+ try{
+  if(typeof j.editedText==='string')await persistTranscript(token,j.editedText);
+  if(j?.token===token)await openComparison('job='+encodeURIComponent(token));
+ }catch(error){el('toast').textContent=error.message}
+};
 el('syncMetrics').onclick=async()=>{
  const btn=el('syncMetrics');btn.disabled=true;el('toast').textContent='正在读取这条作品的数据…';
  try{
@@ -128,7 +172,7 @@ async function selectSource(){
  history.replaceState(null,'','?workTab='+workTab);
  el('sourceTools').hidden=true;el('openDouyin').hidden=true;
  el('lead').textContent='已连接：'+(tab.title||tab.url);
- el('start').firstChild.textContent='快速提取当前视频 ';
+ el('start').firstChild.textContent='提取当前视频 ';
  return tab;
 }
 if(workTab==='none')showDisconnected();

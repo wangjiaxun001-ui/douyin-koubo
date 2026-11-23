@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "拾句 · 抖音口播提词器",
-  "version": "1.5.6",
+  "version": "1.6.1",
   "minimum_chrome_version": "116",
   "description": "提取当前抖音视频字幕，或直接读取原声音轨并在本机快速转写。一键复制口播正文和脚本结构。",
   "permissions": [

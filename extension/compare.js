@@ -405,7 +405,7 @@ async function loadEditor(){
    const {job}=await chrome.storage.session.get('job');
    if(job?.token===token && job.rows?.length){
     const url=/^\d+$/.test(job.workId)?'https://www.douyin.com/video/'+job.workId:'';
-    const text=job.rows.map(row=>row.t).join('\n');
+    const text=typeof job.editedText==='string'?job.editedText:job.rows.map(row=>row.t).join('\n');
     let col=project.raw.findIndex((raw,i)=>raw===text&&project.sources[i]===url);
     if(col===-1){appendSource(job.title||'拾句口播',text,url);col=project.names.length-1}
     applyMetrics(project,col,job.metrics,job.metricsAt||Date.now());

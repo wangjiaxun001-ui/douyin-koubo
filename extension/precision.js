@@ -21,7 +21,8 @@ function connectPrecision(job) {
     if (message.checkingPicture) {
       if (state === job && job.phase === 'fast') {
         const percent = Math.min(99,Math.floor((message.pictureTime || 0) / job.duration * 100));
-        job.message = '正在核对画面字幕与原声… '+percent+'%';
+        if(job.mode==='picture')job.time=Math.min(job.duration,Math.max(0,message.pictureTime||0));
+        job.message = (job.mode==='picture'?'正在逐帧读取原字幕… ':'正在核对画面字幕与原声… ')+percent+'%';
         save();
       }
       armTimeout();
@@ -59,6 +60,51 @@ function connectPrecision(job) {
   };
   precisionSessions.set(job.token, session);
   return session;
+}
+
+async function extractPictureOnly(job) {
+  if (!chrome.runtime.connectNative || !await chrome.permissions.contains({permissions:['nativeMessaging']})) {
+    throw Error('读取画面字幕需要连接本机助手。请允许本机连接后重试；本次没有改用语音听写。');
+  }
+  guard(job);
+  const session=connectPrecision(job);
+  try {
+    const ready=await session.request({op:'pictureOnly',duration:job.duration});
+    if (!ready.ready || !ready.pictureOnly) throw Error('请更新本机字幕助手后重试。');
+    job.source='画面字幕';
+    job.message='正在读取原视频画面，随后识别中文字幕…';await save();
+    const read=async()=>{
+      const [reference]=await chrome.scripting.executeScript({target:{tabId:job.tab},world:'MAIN',func:playerAddresses,args:[job.workId||'',true]});
+      guard(job);
+      return page(job,'videoBytes',reference?.result||[]);
+    };
+    let size;
+    try { size=await read(); }
+    catch(error) {
+      guard(job);
+      if(error.code!=='NO_MEDIA_URL'||!await openIndependentWork(job))throw error;
+      size=await read();
+    }
+    guard(job);
+    if(!size)throw Error('未取得完整视频画面。本次没有改用语音听写，请打开作品独立页后重试。');
+    for(let offset=0;offset<size;) {
+      const part=await page(job,'videoChunk',offset);guard(job);
+      if(!(part.size>0&&part.size<=size-offset))throw Error('视频画面传输中断，请重新提取。');
+      await session.request({op:'picture',data:part.data});guard(job);offset+=part.size;
+    }
+    job.phase='fast';job.message='正在逐帧读取原字幕，完成后一次显示。';await save();
+    const result=await session.request({op:'finish'});guard(job);
+    if(!result.done||!result.captions?.length)throw Error('没有读到原字幕，本次没有改用语音听写。');
+    await page(job,'validate');guard(job);
+    job.rows=result.captions;
+    job.review={uncertain:result.uncertain||[],gaps:result.gaps||[]};
+    job.captionNote='文字直接来自画面中的中文字幕，未使用语音听写或 AI 改写。';
+    const points=job.review.uncertain.map(i=>job.rows[i]?.s).filter(Number.isFinite);
+    if(points.length)job.captionNote+=' '+points.length+' 处画面识别不稳定，需核对：'+points.slice(0,12).map(t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0')).join('、')+'。';
+    if(job.review.gaps.length)job.captionNote+=' 有 '+job.review.gaps.length+' 段超过 2 秒未读到字幕，请回看是否漏字。';
+    job.time=job.duration;
+    await end(job,'done','已按画面字幕提取 '+job.rows.length+' 行。');
+  } finally { session.close(); }
 }
 
 async function tryPrecision(job) {

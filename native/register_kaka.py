@@ -11,7 +11,7 @@ if sys.platform != 'darwin':
 install = Path.home() / 'Library/Application Support/Shiju/VideoCaptioner'
 if not (install / 'runtime/bin/videocaptioner').is_file():
     raise SystemExit('请先按 README 安装本机卡卡字幕助手。')
-for name in ('kaka-launch', 'kaka_host.py', 'precision.py', 'screen_captions.py'):
+for name in ('kaka-launch', 'kaka_host.py', 'precision.py', 'screen_captions.py', 'picture_only.py'):
     shutil.copy2(root / 'native' / name, install / name)
 digest = hashlib.sha256(str(root / 'extension').encode()).hexdigest()[:32]
 extension_id = digest.translate(str.maketrans('0123456789abcdef', 'abcdefghijklmnop'))

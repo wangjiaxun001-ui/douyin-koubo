@@ -50,7 +50,7 @@ def transcribe_stream(read, send, terms):
             break
         if msg.get('op') == 'picture':
             chunk = base64.b64decode(msg['data'], validate=True)
-            if len(chunk) > 384000 or len(video)+len(chunk)>112*1024*1024:
+            if len(chunk) > 384000 or len(video)+len(chunk)>512*1024*1024:
                 raise ValueError('画面数据过大。')
             video.extend(chunk)
             send({'received':True})

@@ -93,7 +93,7 @@ globalThis.__shiju=async(op,token,force)=>{
  if(!v.isConnected||v.currentSrc!==x.src||key()!==x.id)throw Error('作品已切换，请重新开始');
  if(op==='validate')return true;
  if(op==='videoBytes'){
-  x.picture=await __shijuVideoBytes(v,await x.workItems(),force,x.controller.signal);
+  x.picture=await __shijuVideoBytes(v,await x.workItems(),force,x.controller.signal,progress=>{chrome.runtime.sendMessage({to:'bg',op:'audioProgress',token:x.token,...progress}).catch(()=>{});});
   return x.picture?.size||0;
  }
  if(op==='videoChunk'){

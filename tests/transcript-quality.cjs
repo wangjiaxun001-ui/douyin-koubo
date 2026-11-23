@@ -5,11 +5,36 @@ const vm = require('node:vm');
 const path = require('node:path');
 const code = name => fs.readFileSync(path.join(__dirname, '../extension', name), 'utf8');
 
+test('original-caption mode never reuses speech text or falls back to ASR on failure', async()=>{
+  let calls=0,asrCalls=0,probe;
+  const old={phase:'done',mode:'precise',source:'原声精校',workId:'1234567890123',duration:10,
+    rows:[{s:0,e:10,t:'听写错稿'}]};
+  const chrome={
+    storage:{session:{get:async()=>({job:old}),set:async()=>{}}},permissions:{contains:async()=>true},
+    tabs:{get:async()=>({url:'https://www.douyin.com/video/'+old.workId}),onRemoved:{addListener(){}},onUpdated:{addListener(){}}},
+    scripting:{executeScript:async options=>{
+      if(options.files)return [];
+      if(options.args[0]==='release')return [{result:{value:true}}];
+      probe=options.args[2];
+      return [{result:{value:{duration:10,workId:old.workId,reuse:false,rows:[]}}}];
+    }},
+    runtime:{onMessage:{addListener(){}},sendMessage:async m=>{assert.equal(m.op,'abort');return {};}}
+  };
+  const context=vm.createContext({chrome,importScripts(){},structuredClone,URL,crypto:{randomUUID:()=> 'picture-job'},
+    precisionSessions:new Map(),tryPrecision:async()=>{asrCalls++;return false;},
+    extractPictureOnly:async()=>{calls++;throw Error('测试画面读取失败');}});
+  vm.runInContext(code('background.js'),context);await vm.runInContext('init',context);
+  await context.start(1,true,'picture','',()=>{});
+  const job=vm.runInContext('state',context);
+  assert.equal(calls,1);assert.equal(asrCalls,0);assert.equal(probe.skip,true);
+  assert.equal(job.rows.length,0);assert.equal(job.phase,'error');assert.match(job.message,/画面读取失败/);
+});
+
 test('fresh extraction bypasses old text while still reading original subtitles', async () => {
   for (const fresh of [false, true]) {
     let probe;
     const old = {phase:'done', source:'网页字幕', workId:'1234567890123', duration:10,
-      rows:[{s:0,e:10,t:'旧错稿'}], mode:'precise'};
+      rows:[{s:0,e:10,t:'旧错稿'}], editedText:'手动改好的稿', editRevision:2, mode:'precise'};
     const chrome = {
       storage:{session:{get:async()=>({job:old}),set:async()=>{}}},
       permissions:{contains:async()=>true},
@@ -35,6 +60,8 @@ test('fresh extraction bypasses old text while still reading original subtitles'
     assert.equal(probe.skip,false,'refresh must not disable original subtitles');
     assert.equal(job.rows[0].t,fresh?'重新取得的原字幕':'旧错稿');
     assert.equal(job.source,'网页字幕');
+    assert.equal(job.editedText,fresh?undefined:'手动改好的稿');
+    assert.equal(job.editRevision,fresh?undefined:2);
   }
 });
 
@@ -73,4 +100,30 @@ test('precision results disclose whether original picture captions were availabl
     if(scenario==='incomplete')assert.match(job.captionNote,/未能完整/);
     if(scenario==='voice-only')assert.match(job.captionNote,/你选择/);
   }
+});
+
+test('picture-only pipeline transfers frames, advances progress, and publishes one final transcript', async()=>{
+  let receive,connected=0;
+  const job={mode:'picture',token:'picture',phase:'loading',tab:1,duration:3,rows:[]};
+  const chrome={permissions:{contains:async()=>true},scripting:{executeScript:async()=>[{result:[]}]},
+    runtime:{connectNative:()=>{connected++;return {
+      onDisconnect:{addListener(){}},onMessage:{addListener(fn){receive=fn;}},disconnect(){},
+      postMessage(m){queueMicrotask(()=>{
+        if(m.op==='pictureOnly')receive({ready:true,pictureOnly:true});
+        else if(m.op==='picture')receive({received:true});
+        else if(m.op==='finish'){
+          receive({checkingPicture:true,pictureTime:2});
+          assert.equal(job.time,2);assert.equal(job.rows.length,0);
+          receive({done:true,captions:[{s:0,e:3,t:'画面里的原话'}],uncertain:[],gaps:[]});
+        }else assert.fail('unexpected audio operation: '+m.op);
+      });}
+    };}}
+  };
+  const context=vm.createContext({chrome,state:job,save:async()=>{},guard(){},playerAddresses(){},setTimeout,clearTimeout,
+    page:async(j,op)=>{assert.ok(['videoBytes','videoChunk','validate'].includes(op));return op==='videoBytes'?1:op==='videoChunk'?{size:1,data:'AA=='}:true;},
+    end:async(j,phase,message)=>Object.assign(j,{phase,message})});
+  vm.runInContext(code('precision.js'),context);
+  await context.extractPictureOnly(job);
+  assert.equal(connected,1);assert.equal(job.phase,'done');assert.equal(job.source,'画面字幕');
+  assert.equal(job.rows[0].t,'画面里的原话');assert.match(job.captionNote,/未使用语音听写/);
 });

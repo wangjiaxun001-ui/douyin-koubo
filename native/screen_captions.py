@@ -27,17 +27,17 @@ def agreement(text, nearby):
     return sum(m.size for m in match.get_matching_blocks() if m.size >= 2) / len(a)
 
 
-def read_frame(image, convert, terms=()):
-    if image.width > 960:
-        image = image.resize((960, round(image.height * 960 / image.width)))
+def read_frame(image, convert, terms=(), max_width=960, correct_language=True):
+    if image.width > max_width:
+        image = image.resize((max_width, round(image.height * max_width / image.width)))
     encoded = io.BytesIO()
-    image.save(encoded, format='JPEG', quality=90)
+    image.save(encoded, format='PNG')
     data = encoded.getvalue()
     with objc.autorelease_pool():
         request = Vision.VNRecognizeTextRequest.alloc().init()
         request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
         request.setRecognitionLanguages_(['zh-Hans','en-US'])
-        request.setUsesLanguageCorrection_(True)
+        request.setUsesLanguageCorrection_(correct_language)
         if terms:
             request.setCustomWords_(list(terms))
         nsdata = Foundation.NSData.dataWithBytes_length_(data, len(data))

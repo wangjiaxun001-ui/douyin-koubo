@@ -62,7 +62,7 @@ async function openIndependentWork(j){
  // Keep the same origin, so this uses the existing activeTab grant.
  const target=url.origin+'/video/'+j.workId;
  j.recoveryUrl=target;
- j.message='搜索弹窗未提供完整音轨，正在打开这条作品的独立页面继续提取…';await save();
+ j.message='搜索弹窗未提供完整媒体，正在打开这条作品的独立页面继续提取…';await save();
  try{
   await chrome.tabs.update(j.tab,{url:target});
   let loaded=false;
@@ -82,7 +82,7 @@ async function openIndependentWork(j){
   guard(j);
   if(p.workId!==j.workId||Math.abs(p.duration-j.duration)>1)throw Error('独立页面的作品或时长不一致，已停止提取。');
   j.duration=p.duration;
-  j.message='已打开同一条作品，正在读取完整音轨…';await save();
+  j.message='已打开同一条作品，正在读取完整媒体…';await save();
   return true;
  }finally{delete j.recoveryUrl}
 }
@@ -137,23 +137,27 @@ async function start(tab,force,mode,terms,accepted,fresh=false){
  const t=await chrome.tabs.get(tab);
  if(!valid(t.url))throw Error('请在 Chrome 中打开抖音分享链接，等作品页面出现后再点提取。');
  if(running(state))throw Error('已有视频正在处理');
- const hasNative=mode==='precise' && await chrome.permissions.contains({permissions:['nativeMessaging']});
+ if(mode==='picture')force=false;
+ const hasNative=mode!=='fast' && await chrome.permissions.contains({permissions:['nativeMessaging']});
  if(running(state))throw Error('已有视频正在处理');
  const previous=state;
- const matchingMode=!previous?.forceVoice && previous?.mode===mode && (previous.terms||'')===terms &&
+ const matchingMode=!previous?.forceVoice && previous?.mode===mode && (mode!=='picture'||previous.extractorRevision===4) && (previous.terms||'')===terms &&
    (!hasNative||['原声精校','画面字幕'].includes(previous.source));
- const reuse=!fresh&&!force&&previous?.phase==='done'&&(previous.source==='网页字幕'||matchingMode)&&previous.workId&&previous.rows?.some(r=>r.t&&r.t!=='〔此处未识别清楚〕');
- const j=state={token:crypto.randomUUID(),startedAt:Date.now(),tab,mode,terms,forceVoice:force,phase:'probe',message:'正在读取这条视频的字幕…',title:t.title||'抖音作品',duration:0,time:0,rows:[],source:''};await save();accepted();
+ const reuse=!fresh&&!force&&previous?.phase==='done'&&((mode!=='picture'&&previous.source==='网页字幕')||matchingMode)&&previous.workId&&previous.rows?.some(r=>r.t&&r.t!=='〔此处未识别清楚〕');
+ const j=state={token:crypto.randomUUID(),startedAt:Date.now(),tab,mode,terms,extractorRevision:4,forceVoice:force,phase:'probe',message:'正在读取这条视频的字幕…',title:t.title||'抖音作品',duration:0,time:0,rows:[],source:''};await save();accepted();
  try{
   await chrome.scripting.executeScript({target:{tabId:tab},files:['metrics.js','fast.js','page.js']});guard(j);
-  const p=await page(j,'probe',{skip:force,previousCaptions:previous?.source==='网页字幕',previousId:reuse?previous.workId:null,previousDuration:reuse?previous.duration:0});guard(j);Object.assign(j,{title:p.title,duration:p.duration,workId:p.workId});
+  const p=await page(j,'probe',{skip:mode==='picture'||force,previousCaptions:previous?.source==='网页字幕',previousId:reuse?previous.workId:null,previousDuration:reuse?previous.duration:0});guard(j);Object.assign(j,{title:p.title,duration:p.duration,workId:p.workId});
   if(reuse&&p.reuse&&!p.rows.length){
-   Object.assign(j,{rows:previous.rows,source:previous.source,time:p.duration,captionNote:previous.captionNote||'这是上次的提取结果。发现错字可点「重新提取」，重新读取本条作品。'});
+   Object.assign(j,{rows:previous.rows,source:previous.source,time:p.duration,review:previous.review,...(typeof previous.editedText==='string'?{editedText:previous.editedText,editRevision:previous.editRevision||0}:{}),captionNote:previous.captionNote||'这是上次的提取结果。发现错字可点「重新提取」，重新读取本条作品。'});
    if(!j.metricsAt)Object.assign(j,{metrics:previous.metrics,metricsAt:previous.metricsAt});
    await end(j,'done','已读取这条作品上次完成的逐字稿。');return
   }
-  if(p.rows.length){j.rows=p.rows;j.source='网页字幕';j.time=p.duration;await end(j,'done','已提取网页字幕。可对照原声核对。');return}
+  if(mode!=='picture'&&p.rows.length){j.rows=p.rows;j.source='网页字幕';j.time=p.duration;await end(j,'done','已提取网页字幕。可对照原声核对。');return}
 
+  if(mode==='picture'){
+   j.phase='loading';await save();await extractPictureOnly(j);return;
+  }
   j.phase='loading';j.source='本地语音识别';j.message='未使用字幕，正在准备本地识别…';await save();
   if(await tryPrecision(j))return;
   guard(j);
@@ -173,17 +177,25 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
  if(m.to!=='bg')return;
  if(m.op==='start'){
   let acknowledged=false;
-  init.then(()=>start(m.tab,!!m.force,m.mode==='fast'?'fast':'precise',String(m.terms||'').trim().slice(0,180),()=>{
+  init.then(()=>start(m.tab,!!m.force,['fast','precise'].includes(m.mode)?m.mode:'picture',String(m.terms||'').trim().slice(0,180),()=>{
    acknowledged=true;reply({ok:true});
   },!!m.fresh)).catch(error=>{if(!acknowledged)reply({error:error.message})});
   return true;
  }
  (async()=>{
   await init;
-  const j=state;if(!j||j.token!==m.token)return;
+  const j=state;
+  if(m.op==='editTranscript'){
+   if(!j||j.token!==m.token)throw Error('已切换到另一篇逐字稿，请先复制保留当前修改。');
+   if(running(j))throw Error('提取完成后才能编辑逐字稿。');
+   if(typeof m.text!=='string'||m.text.length>200000)throw Error('逐字稿内容无效或超过20万字。');
+   j.editedText=m.text;j.editedAt=Date.now();j.editRevision=(j.editRevision||0)+1;
+   const revision=j.editRevision;await save();return {revision};
+  }
+  if(!j||j.token!==m.token)return;
   if(m.op==='audioProgress' && s.tab?.id===j.tab && j.phase==='loading'){
    const mb=Number.isFinite(m.bytes)?Math.max(0,m.bytes)/1024/1024:0;
-   j.message=m.stage==='decode'?'完整媒体已读取，正在解码音轨…':'正在读取完整音轨… '+mb.toFixed(1)+' MB';
+   j.message=m.stage==='picture'?'正在读取原视频画面… '+mb.toFixed(1)+' MB':m.stage==='decode'?'完整媒体已读取，正在解码音轨…':'正在读取完整音轨… '+mb.toFixed(1)+' MB';
    await save();return;
   }
   if(m.op==='workMetrics'&&s.tab?.id===j.tab&&/^\d+$/.test(m.workId)&&(!j.workId||j.workId===m.workId)){
@@ -191,7 +203,7 @@ chrome.runtime.onMessage.addListener((m,s,reply)=>{
   }
   if(!running(j))return;
   if(m.op==='stop')await stop(j,'手动停止');
- })().then(()=>reply({ok:true}),e=>reply({error:e.message}));return true
+ })().then(result=>reply({ok:true,...result}),e=>reply({error:e.message}));return true
 });
 chrome.tabs.onRemoved.addListener(async id=>{await init;if(state?.tab===id)await stop(state,'视频标签页已关闭')});
 chrome.tabs.onUpdated.addListener(async(id,c,tab)=>{

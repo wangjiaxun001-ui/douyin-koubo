@@ -31,6 +31,9 @@ def read_message():
 
 
 def main():
+    # Chrome launches Python with -I, so sibling modules are not on sys.path.
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     output = sys.stdout.buffer
     sys.stdout = sys.stderr
 
@@ -43,9 +46,11 @@ def main():
 
     try:
         message = read_message()
-        if message.get('op') == 'transcribe':
-            from pathlib import Path
-            sys.path.insert(0, str(Path(__file__).resolve().parent))
+        if message.get('op') == 'pictureOnly':
+            from picture_only import picture_stream
+            picture_stream(read_message,send,float(message['duration']))
+            read_message()
+        elif message.get('op') == 'transcribe':
             from precision import transcribe_stream
             transcribe_stream(read_message, send, str(message.get('terms') or ''))
             # Keep the port alive until Chrome has persisted the final result.
